@@ -82,7 +82,8 @@ def build_habits_table(data):
 
 def build_history(data):
     today = datetime.now().date()
-    days = [(today - timedelta(days=i)) for i in range(29, -1, -1)]
+    start = today.replace(day=1)
+    days = [start + timedelta(days=i) for i in range((today - start).days + 1)]
 
     header = Text(" " * 16, style="dim")
     for day in days:
@@ -114,10 +115,10 @@ def show_habits():
             Group(
                 build_habits_table(data),
                 Rule(style="cyan dim"),
-                Text("30-Day History", style="dim cyan"),
+                Text(f"This Month — {datetime.now().strftime('%B %Y')}", style="dim cyan"),
                 build_history(data),
                 Rule(style="cyan dim"),
-                Text(message, justify="center") if message else Text("Enter a number to mark done, or q to go back.", style="dim"),
+                Text.from_markup(message, justify="center") if message else Text("Enter a number to mark done, or q to go back.", style="dim"),
             ),
             title="[bold cyan]HABITS[/bold cyan]",
             box=box.HEAVY,
