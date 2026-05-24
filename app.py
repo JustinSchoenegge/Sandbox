@@ -6,6 +6,7 @@ from rich.panel import Panel
 from dashboard import show_dashboard
 from habits import show_habits
 from tasks import show_tasks
+from notes import show_notes
 from game import main as play_game
 
 console = Console()
@@ -28,6 +29,8 @@ def main():
             show_habits()
         elif choice == "2":
             show_tasks()
+        elif choice == "3":
+            show_notes()
         elif choice == "4":
             play_game()
         elif choice == "q":
