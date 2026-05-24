@@ -15,13 +15,13 @@ def main():
         show_dashboard()
 
         console.print(Panel(
-            "[1] Habits\n[2] Tasks\n[3] Notes\n[4] Play Number Guesser\n[q] Quit",
-            title="[bold cyan]Menu[/bold cyan]",
-            box=box.ROUNDED,
+            "[dim][1][/dim] Habits  [dim][2][/dim] Tasks  [dim][3][/dim] Notes  [dim][4][/dim] Game  [dim][q][/dim] Quit",
+            box=box.HEAVY,
             style="cyan",
+            padding=(0, 1),
         ))
 
-        choice = Prompt.ask("\nWhat would you like to do", choices=["1", "2", "3", "4", "q"])
+        choice = Prompt.ask("", choices=["1", "2", "3", "4", "q"])
 
         if choice == "1":
             show_habits()
