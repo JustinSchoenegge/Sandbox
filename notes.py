@@ -18,11 +18,15 @@ NOTES_FILE = "data/notes.json"
 def load_notes():
     if not os.path.exists(NOTES_FILE):
         return []
-    with open(NOTES_FILE, "r") as f:
-        return json.load(f)
+    try:
+        with open(NOTES_FILE, "r") as f:
+            return json.load(f)
+    except json.JSONDecodeError:
+        return []
 
 
 def save_notes(notes):
+    os.makedirs("data", exist_ok=True)
     with open(NOTES_FILE, "w") as f:
         json.dump(notes, f, indent=2)
 

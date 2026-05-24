@@ -21,11 +21,15 @@ HABITS = ["AI", "Running", "Lifting", "Reading", "Eating Healthy", "Streaming"]
 def load_habits():
     if not os.path.exists(HABITS_FILE):
         return {habit: [] for habit in HABITS}
-    with open(HABITS_FILE, "r") as f:
-        return json.load(f)
+    try:
+        with open(HABITS_FILE, "r") as f:
+            return json.load(f)
+    except json.JSONDecodeError:
+        return {habit: [] for habit in HABITS}
 
 
 def save_habits(data):
+    os.makedirs("data", exist_ok=True)
     with open(HABITS_FILE, "w") as f:
         json.dump(data, f, indent=2)
 
@@ -126,7 +130,7 @@ def show_habits():
             padding=(0, 1),
         ))
 
-        choice = Prompt.ask("")
+        choice = Prompt.ask("[cyan]  Select[/cyan]")
 
         if choice.lower() == "q":
             break

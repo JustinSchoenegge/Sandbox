@@ -11,10 +11,12 @@ from game import main as play_game
 
 console = Console()
 
+NAME = "Justin"
+
 
 def main():
     while True:
-        show_dashboard()
+        show_dashboard(NAME)
 
         console.print(Panel(
             "[dim]\[1][/dim] Habits  [dim]\[2][/dim] Tasks  [dim]\[3][/dim] Notes  [dim]\[4][/dim] Game  [dim]\[q][/dim] Quit",
@@ -40,4 +42,5 @@ def main():
             console.print("\n[yellow]Coming soon — building this next![/yellow]\n")
 
 
-main()
+if __name__ == "__main__":
+    main()

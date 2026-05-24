@@ -39,14 +39,14 @@ def get_quote():
     return quote
 
 
-def show_dashboard():
+def show_dashboard(name="User"):
     console.clear()
     now = datetime.now()
     date_str = now.strftime("%a %b %d")
     time_str = now.strftime("%I:%M %p")
 
     content = Text()
-    content.append(f"{get_greeting()}, Justin", style="bold cyan")
+    content.append(f"{get_greeting()}, {name}", style="bold cyan")
     content.append(f"   {date_str}  {time_str}\n", style="dim white")
     content.append(f'"{get_quote()}"', style="italic dim white")
 
