@@ -3,6 +3,7 @@ from rich.prompt import Prompt
 from rich import box
 from rich.panel import Panel
 
+from config import load_config
 from dashboard import show_dashboard
 from habits import show_habits
 from tasks import show_tasks
@@ -11,12 +12,13 @@ from game import main as play_game
 
 console = Console()
 
-NAME = "Justin"
-
 
 def main():
+    config = load_config()
+    name = config["name"]
+
     while True:
-        show_dashboard(NAME)
+        show_dashboard(name)
 
         console.print(Panel(
             "[dim]\[1][/dim] Habits  [dim]\[2][/dim] Tasks  [dim]\[3][/dim] Notes  [dim]\[4][/dim] Game  [dim]\[q][/dim] Quit",
@@ -34,7 +36,7 @@ def main():
         elif choice == "3":
             show_notes()
         elif choice == "4":
-            play_game()
+            play_game(name)
         elif choice == "q":
             console.print("\n[dim]See you tomorrow.[/dim]\n")
             break

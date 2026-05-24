@@ -70,9 +70,11 @@ def show_notes():
         elif choice.lower() == "a":
             text = Prompt.ask("[cyan]  Note[/cyan]").strip()
             if text:
+                tags = [w for w in text.split() if w.startswith("#")]
                 notes.append({
                     "timestamp": datetime.now().strftime("%Y-%m-%d %I:%M %p"),
                     "text": text,
+                    "tags": tags,
                 })
                 save_notes(notes)
                 message = "[bold green]Note saved.[/bold green]"
