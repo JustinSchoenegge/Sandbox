@@ -1,6 +1,4 @@
 import random
-import json
-import os
 
 from rich.console import Console
 from rich.panel import Panel
@@ -9,111 +7,13 @@ from rich.rule import Rule
 from rich.text import Text
 from rich.prompt import Prompt
 from rich import box
-from datetime import datetime
+
+from stocks import STOCKS, PRICES_AS_OF, TIER_STYLES
+from portfolio import load_portfolio, check_alignment
 
 console = Console()
 
 SCORES_FILE = "scores.txt"
-PRICES_AS_OF = "May 2026"
-
-STOCKS = [
-    {
-        "name": "Apple",
-        "ticker": "AAPL",
-        "sector": "Technology",
-        "price": 210,
-        "hint": "$100 – $500",
-        "fact": "Apple was the first US company to hit a $3 trillion market cap.",
-    },
-    {
-        "name": "NVIDIA",
-        "ticker": "NVDA",
-        "sector": "Semiconductors",
-        "price": 130,
-        "hint": "$100 – $500",
-        "fact": "NVIDIA's GPUs power most of the world's AI model training.",
-    },
-    {
-        "name": "Tesla",
-        "ticker": "TSLA",
-        "sector": "Electric Vehicles",
-        "price": 250,
-        "hint": "$100 – $500",
-        "fact": "Tesla delivers over 1.8 million vehicles per year globally.",
-    },
-    {
-        "name": "Amazon",
-        "ticker": "AMZN",
-        "sector": "E-Commerce / Cloud",
-        "price": 220,
-        "hint": "$100 – $500",
-        "fact": "Amazon Web Services generates more profit than the entire retail business.",
-    },
-    {
-        "name": "Microsoft",
-        "ticker": "MSFT",
-        "sector": "Technology",
-        "price": 430,
-        "hint": "$100 – $500",
-        "fact": "Microsoft invested $13 billion into OpenAI, the company behind ChatGPT.",
-    },
-    {
-        "name": "Meta",
-        "ticker": "META",
-        "sector": "Social Media",
-        "price": 590,
-        "hint": "$500 – $1000",
-        "fact": "Meta's apps — Facebook, Instagram, WhatsApp — reach over 3 billion daily users.",
-    },
-    {
-        "name": "Netflix",
-        "ticker": "NFLX",
-        "sector": "Streaming",
-        "price": 1100,
-        "hint": "$500+",
-        "fact": "Netflix has over 300 million paid subscribers across 190 countries.",
-    },
-    {
-        "name": "Google",
-        "ticker": "GOOGL",
-        "sector": "Technology",
-        "price": 170,
-        "hint": "$100 – $500",
-        "fact": "Google processes over 8.5 billion searches per day.",
-    },
-    {
-        "name": "Palantir",
-        "ticker": "PLTR",
-        "sector": "AI / Defense",
-        "price": 120,
-        "hint": "Under $200",
-        "fact": "Palantir's AI platform is used by the US Army and dozens of intelligence agencies.",
-    },
-    {
-        "name": "Spotify",
-        "ticker": "SPOT",
-        "sector": "Music Streaming",
-        "price": 640,
-        "hint": "$500 – $1000",
-        "fact": "Spotify has over 600 million monthly active users and 240 million paid subscribers.",
-    },
-    {
-        "name": "AMD",
-        "ticker": "AMD",
-        "sector": "Semiconductors",
-        "price": 110,
-        "hint": "Under $200",
-        "fact": "AMD's EPYC chips now power a significant share of major cloud data centers.",
-    },
-    {
-        "name": "Coinbase",
-        "ticker": "COIN",
-        "sector": "Crypto Exchange",
-        "price": 240,
-        "hint": "$100 – $500",
-        "fact": "Coinbase is the largest regulated crypto exchange in the United States.",
-    },
-]
 
 
 def save_score(name, ticker, attempts):
@@ -121,17 +21,31 @@ def save_score(name, ticker, attempts):
         f.write(f"{name} guessed {ticker} in {attempts} attempt(s)\n")
 
 
-def get_guess(hint):
-    while True:
-        raw = Prompt.ask("[cyan]  Your guess $[/cyan]").strip()
-        if raw.lower() == "q":
-            return None
-        if raw.isdigit():
-            return int(raw)
-        console.print("[bold red]Enter a whole number or q to quit.[/bold red]")
+def build_alignment_panel(stock, portfolio):
+    sector = stock["sector"]
+    goals = portfolio["goals"]
+    holdings = portfolio["holdings"]
+
+    owned = next((h for h in holdings if h["ticker"] == stock["ticker"]), None)
+    lines = Text()
+
+    if owned:
+        tier = owned.get("tier", "?")
+        tier_style = TIER_STYLES.get(tier, "white")
+        lines.append("You own this stock\n", style="bold cyan")
+        lines.append(f"  Shares: {owned['shares']}   Avg cost: ${owned['avg_cost']:.2f}   Tier: ", style="dim white")
+        lines.append(f"{tier}\n", style=tier_style)
+    else:
+        label, style = check_alignment(sector, goals)
+        lines.append("Portfolio fit: ", style="dim white")
+        lines.append(f"{label}\n", style=style)
+        lines.append(f"  Sector: {sector}   Your goals: {', '.join(goals)}", style="dim")
+
+    return lines
 
 
 def play_round(name):
+    portfolio = load_portfolio()
     stock = random.choice(STOCKS)
     attempts = 0
 
@@ -143,7 +57,7 @@ def play_round(name):
             Text(f"Price hint: {stock['hint']}", style="dim yellow"),
             Rule(style="cyan dim"),
             Text(f"Prices approximate as of {PRICES_AS_OF}.", style="dim"),
-            Text("Type q to quit this round.", style="dim"),
+            Text("Guess within 5% to win. Type q to quit.", style="dim"),
         ),
         title="[bold cyan]STOCK GUESSER[/bold cyan]",
         box=box.HEAVY,
@@ -152,11 +66,16 @@ def play_round(name):
     ))
 
     while True:
-        guess = get_guess(stock["hint"])
-        if guess is None:
+        raw = Prompt.ask("[cyan]  Your guess $[/cyan]").strip()
+        if raw.lower() == "q":
             console.print("\n[dim]Round abandoned.[/dim]\n")
             return None
 
+        if not raw.isdigit():
+            console.print("[bold red]Enter a whole number or q to quit.[/bold red]")
+            continue
+
+        guess = int(raw)
         attempts += 1
         diff = abs(guess - stock["price"])
         pct_off = diff / stock["price"]
@@ -164,10 +83,11 @@ def play_round(name):
         if pct_off <= 0.05:
             console.print(Panel(
                 Group(
-                    Text(f"Close enough! Actual price: ${stock['price']}", style="bold green"),
-                    Text(f"You got it in {attempts} attempt(s).", style="dim white"),
-                    Rule(style="cyan dim"),
-                    Text(f"Did you know? {stock['fact']}", style="italic white"),
+                    Text(f"Actual price: ${stock['price']}  —  got it in {attempts} attempt(s).", style="bold green"),
+                    Rule(style="green dim"),
+                    Text(f"{stock['fact']}", style="italic white"),
+                    Rule(style="green dim"),
+                    build_alignment_panel(stock, portfolio),
                 ),
                 title="[bold green]CORRECT[/bold green]",
                 box=box.HEAVY,
@@ -177,9 +97,9 @@ def play_round(name):
             save_score(name, stock["ticker"], attempts)
             return attempts
         elif guess < stock["price"]:
-            console.print(f"[bold yellow]Too low![/bold yellow]  (you guessed ${guess})")
+            console.print(f"[bold yellow]Too low![/bold yellow]  (guessed ${guess})")
         else:
-            console.print(f"[bold yellow]Too high![/bold yellow]  (you guessed ${guess})")
+            console.print(f"[bold yellow]Too high![/bold yellow]  (guessed ${guess})")
 
 
 def main(name="Player"):
