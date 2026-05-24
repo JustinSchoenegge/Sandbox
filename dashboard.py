@@ -46,7 +46,10 @@ def render_header():
 
 
 def render_quote():
+    today = datetime.now().strftime("%Y-%m-%d")
+    random.seed(today)
     quote = random.choice(QUOTES)
+    random.seed()
     console.print(Panel(
         Text(f'"{quote}"', style="italic white", justify="center"),
         title="[bold yellow]Daily Spark[/bold yellow]",
