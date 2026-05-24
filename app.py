@@ -1,5 +1,24 @@
 import random
 
+SCORES_FILE = "scores.txt"
+
+
+def save_score(name, attempts):
+    with open(SCORES_FILE, "a") as f:
+        f.write(f"{name}: {attempts} attempt(s)\n")
+
+
+def show_scores():
+    try:
+        with open(SCORES_FILE, "r") as f:
+            lines = f.readlines()
+        print("\n--- Past Scores ---")
+        for line in lines:
+            print(line.strip())
+        print("-------------------")
+    except FileNotFoundError:
+        print("No scores yet!")
+
 
 def get_guess():
     while True:
@@ -30,9 +49,12 @@ def play_round():
 
 def main():
     print("=== Number Guesser ===")
+    name = input("What's your name? ").strip() or "Anonymous"
+    show_scores()
 
     while True:
-        play_round()
+        attempts = play_round()
+        save_score(name, attempts)
         again = input("\nPlay again? (y/n): ").strip().lower()
         if again != "y":
             print("Thanks for playing!")
