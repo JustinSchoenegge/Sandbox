@@ -22,10 +22,16 @@ def show_scores():
 
 def get_guess():
     while True:
-        raw = input("Your guess: ")
+        raw = input("Your guess (or 'q' to quit): ").strip().lower()
+        if raw == "q":
+            return None
         if raw.isdigit():
-            return int(raw)
-        print("Please enter a whole number.")
+            value = int(raw)
+            if 1 <= value <= 100:
+                return value
+            print("Please enter a number between 1 and 100.")
+        else:
+            print("Please enter a whole number.")
 
 
 def play_round():
@@ -36,6 +42,9 @@ def play_round():
 
     while True:
         guess = get_guess()
+        if guess is None:
+            print("Round abandoned.")
+            return None
         attempts += 1
 
         if guess < secret:
@@ -54,7 +63,8 @@ def main():
 
     while True:
         attempts = play_round()
-        save_score(name, attempts)
+        if attempts is not None:
+            save_score(name, attempts)
         again = input("\nPlay again? (y/n): ").strip().lower()
         if again != "y":
             print("Thanks for playing!")
