@@ -1,6 +1,7 @@
 import json
 import os
 
+from storage import atomic_save
 from rich.console import Console
 from rich.console import Group
 from rich.panel import Panel
@@ -34,9 +35,7 @@ def load_portfolio():
 
 
 def save_portfolio(portfolio):
-    os.makedirs("data", exist_ok=True)
-    with open(PORTFOLIO_FILE, "w") as f:
-        json.dump(portfolio, f, indent=2)
+    atomic_save(PORTFOLIO_FILE, portfolio)
 
 
 def get_stock_price(ticker):

@@ -2,6 +2,7 @@ import json
 import os
 from datetime import datetime
 
+from storage import atomic_save
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
@@ -31,8 +32,7 @@ def load_config():
 
 
 def save_config(config):
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(config, f, indent=2)
+    atomic_save(CONFIG_FILE, config)
 
 
 def first_run():

@@ -2,6 +2,8 @@ import json
 import os
 from datetime import datetime, timedelta
 
+from storage import atomic_save
+
 from rich.console import Console
 from rich.console import Group
 from rich.table import Table
@@ -29,9 +31,7 @@ def load_habits():
 
 
 def save_habits(data):
-    os.makedirs("data", exist_ok=True)
-    with open(HABITS_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+    atomic_save(HABITS_FILE, data)
 
 
 def calculate_streak(dates):

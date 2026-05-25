@@ -2,6 +2,8 @@ import json
 import os
 from datetime import datetime
 
+from storage import atomic_save
+
 from rich.console import Console
 from rich.console import Group
 from rich.table import Table
@@ -36,10 +38,8 @@ def load_tasks():
 
 
 def save_tasks(tasks):
-    os.makedirs("data", exist_ok=True)
     today = datetime.now().strftime("%Y-%m-%d")
-    with open(TASKS_FILE, "w") as f:
-        json.dump({"date": today, "tasks": tasks}, f, indent=2)
+    atomic_save(TASKS_FILE, {"date": today, "tasks": tasks})
 
 
 def build_tasks_table(tasks):

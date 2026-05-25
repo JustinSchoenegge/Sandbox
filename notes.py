@@ -2,6 +2,8 @@ import json
 import os
 from datetime import datetime
 
+from storage import atomic_save
+
 from rich.console import Console
 from rich.console import Group
 from rich.panel import Panel
@@ -26,9 +28,7 @@ def load_notes():
 
 
 def save_notes(notes):
-    os.makedirs("data", exist_ok=True)
-    with open(NOTES_FILE, "w") as f:
-        json.dump(notes, f, indent=2)
+    atomic_save(NOTES_FILE, notes)
 
 
 def build_notes_list(notes):
