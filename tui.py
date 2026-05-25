@@ -1,9 +1,10 @@
 """
 tui.py  —  Dark Hour Dashboard (Textual TUI)
-Persona 3 aesthetic.  Replaces app.py as the main entry point.
+Persona 3 × GTA aesthetic.  Replaces app.py as the main entry point.
 """
 
 import os
+import signal
 import shlex
 import subprocess
 from datetime import datetime
@@ -13,8 +14,9 @@ from rich.console import RenderableType
 
 from textual.app import App, ComposeResult
 from textual.screen import Screen
-from textual.widgets import Static, DataTable, Input
+from textual.widgets import Static, DataTable, Input, Label
 from textual.containers import Horizontal, Vertical, ScrollableContainer
+from textual.widget import Widget
 from textual import work
 from textual import events
 
@@ -34,7 +36,7 @@ load_env()
 # ── boot sound ─────────────────────────────────────────────────────────────────
 
 def _boot_sound() -> None:
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "boot.m4a")
+    path = "/System/Library/Sounds/Glass.aiff"
     if os.path.exists(path):
         subprocess.Popen(
             ["afplay", path],
@@ -44,7 +46,7 @@ def _boot_sound() -> None:
 
 
 def _start_bg_music() -> "subprocess.Popen | None":
-    """Loop vicecity.m4a in the background. Returns the shell process so it can be terminated."""
+    """Loop vicecity.m4a in the background. Returns the process so it can be paused/terminated."""
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "vicecity.m4a")
     if not os.path.exists(path):
         return None
@@ -53,7 +55,12 @@ def _start_bg_music() -> "subprocess.Popen | None":
         ["bash", "-c", cmd],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        start_new_session=True,  # isolated process group so SIGSTOP/SIGCONT don't hit Python
     )
+
+
+def _build_footer_markup(quote: str) -> str:
+    return f'[italic #5f87af]"{quote}"[/italic #5f87af]'
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -61,7 +68,7 @@ def _start_bg_music() -> "subprocess.Popen | None":
 # ══════════════════════════════════════════════════════════════════════════════
 
 class DashboardHeader(Static):
-    """Animated header with ASCII logo, greeting and live clock."""
+    """Animated header with ASCII logo, city skyline, and live clock."""
 
     def __init__(self, name: str) -> None:
         super().__init__()
@@ -82,36 +89,40 @@ class DashboardHeader(Static):
     def render(self) -> RenderableType:
         t = Text(justify="center")
         t.append("▀█▀ █░█ █▀▀   █▀▄ █▀█ █▀█ █▄▀   █░█ █▀█ █░█ █▀█\n", style="bold white")
-        t.append("░█░ █▀█ ██▄   █▄▀ █▀█ █▀▄ █░█   █▀█ █▀▄ █▄█ █▀▄\n", style="bold white")
-        t.append("      · · · ☽ · · ·\n", style="dim #5f87af")
-        t.append(f"{get_greeting()}, {self._user_name}", style="bold white")
+        t.append("░█░ █▀█ ██▄   █▄▀ █▀█ █▀▄ █░█   █▀█ █▄█ █▄█ █▀▄\n", style="bold white")
+        t.append("──────────────── ◐ ────────────────\n", style="dim #4a9eff")
+        t.append(f"{get_greeting()}, {self._user_name}", style="bold #e8a020")
         t.append(f"  ·  {self._date}  {self._clock}", style="dim #5f87af")
         return t
 
 
-class NavSidebar(Static):
-    """Left-hand navigation sidebar."""
+class NavSidebar(Widget):
+    """Left-hand navigation sidebar — GTA mission-select style."""
 
-    def render(self) -> RenderableType:
-        t = Text()
+    def compose(self) -> ComposeResult:
+        nav = Text()
         for key, label in [
-            ("[1]", "Habits"),
-            ("[2]", "Tasks"),
-            ("[3]", "Notes"),
-            ("[4]", "Game"),
-            ("[5]", "Portfolio"),
-            ("[6]", "Music"),
+            ("1", "HABITS"),
+            ("2", "TASKS"),
+            ("3", "NOTES"),
+            ("4", "GAME"),
+            ("5", "PORTFOLIO"),
+            ("6", "MUSIC"),
         ]:
-            t.append(key + " ", style="dim #5f87af")
-            t.append(label + "\n", style="bold white")
-        t.append("──────────────────\n", style="dim #2a3a5a")
-        t.append("[q] ", style="dim #5f87af")
-        t.append("Quit", style="bold white")
-        return t
+            nav.append(f"[{key}]", style="bold #e8a020")
+            nav.append(f"  {label}\n", style="bold white")
+        nav.append("\n")
+        nav.append("[q]", style="bold #e8a020")
+        nav.append("  QUIT", style="bold white")
+        yield Static(nav, id="nav-items")
+        yield Static(
+            "[dim #1e3a5f]· · · · · · · ·\n[/dim #1e3a5f][dim #2a3a5a] DARK  HOUR[/dim #2a3a5a]",
+            id="nav-watermark",
+        )
 
 
 class HabitsWidget(Static):
-    """Summary panel: habits done today + best streak."""
+    """HUD card: habits done today + best streak."""
 
     def on_mount(self) -> None:
         self.refresh_data()
@@ -131,17 +142,19 @@ class HabitsWidget(Static):
             best = max(
                 (calculate_streak(logs.get(h, [])) for h in habits), default=0
             )
-            t = Text()
-            t.append(f"{done} / {total} today\n", style="bold white")
-            t.append(bar + "\n", style="#5f87af")
-            t.append(f"Best streak  {best}d", style="dim #5f87af")
+            stat_style = "bold #e8a020" if done > 0 else "bold dim white"
+            t = Text(justify="center")
+            t.append(f"{done}/{total}\n", style=stat_style)
+            t.append("HABITS TODAY\n", style="dim #4a5568")
+            t.append(bar + "\n", style="dim #2a3a5a")
+            t.append(f"{best}d STREAK", style="dim #5f87af")
             self.update(t)
         except Exception:
             self.update(Text("Habits unavailable", style="dim"))
 
 
 class TasksWidget(Static):
-    """Summary panel: tasks remaining."""
+    """HUD card: tasks remaining."""
 
     def on_mount(self) -> None:
         self.refresh_data()
@@ -155,19 +168,26 @@ class TasksWidget(Static):
             total = len(tasks)
             done_count = sum(1 for t in tasks if t["done"])
             remaining = total - done_count
-            t = Text()
-            if remaining == 0:
-                t.append("All tasks complete ✓", style="bold #00c040")
+            t = Text(justify="center")
+            if remaining == 0 and total > 0:
+                t.append("ALL DONE\n", style="bold #00c040")
+                t.append("TASKS\n", style="dim #4a5568")
+                t.append(f"{total} complete", style="dim #5f87af")
+            elif total == 0:
+                t.append("—\n", style="dim")
+                t.append("NO TASKS\n", style="dim #4a5568")
+                t.append("a = add one", style="dim #2a3a5a")
             else:
-                t.append(f"{remaining} remaining\n", style="bold white")
-                t.append(f"{done_count} of {total} complete", style="dim #5f87af")
+                t.append(f"{remaining}\n", style="bold #e8a020")
+                t.append("REMAINING\n", style="dim #4a5568")
+                t.append(f"{done_count} of {total} done", style="dim #5f87af")
             self.update(t)
         except Exception:
             self.update(Text("Tasks unavailable", style="dim"))
 
 
 class NotesWidget(Static):
-    """Summary panel: note count + last note preview."""
+    """HUD card: note count + last note preview."""
 
     def on_mount(self) -> None:
         self.refresh_data()
@@ -179,21 +199,22 @@ class NotesWidget(Static):
         try:
             notes = load_notes()
             count = len(notes)
-            t = Text()
-            t.append(f"{count} note{'s' if count != 1 else ''}\n", style="bold white")
+            t = Text(justify="center")
+            t.append(f"{count}\n", style="bold #e8a020")
+            t.append(f"NOTE{'S' if count != 1 else ''}\n", style="dim #4a5568")
             if notes:
                 last_text = notes[-1]["text"]
-                preview = (last_text[:40] + "…") if len(last_text) > 40 else last_text
-                t.append(preview, style="italic dim #008b8b")
+                preview = (last_text[:28] + "…") if len(last_text) > 28 else last_text
+                t.append(preview, style="italic dim #5f87af")
             else:
-                t.append("No notes yet", style="dim")
+                t.append("no notes yet", style="dim #2a3a5a")
             self.update(t)
         except Exception:
             self.update(Text("Notes unavailable", style="dim"))
 
 
 class PortfolioWidget(Static):
-    """Summary panel: total value + top 2 holdings."""
+    """HUD card: total value + top 2 holdings."""
 
     def on_mount(self) -> None:
         self.refresh_data()
@@ -208,20 +229,38 @@ class PortfolioWidget(Static):
             portfolio = await asyncio.to_thread(load_portfolio)
             holdings = portfolio.get("holdings", [])
             rows = await asyncio.to_thread(calculate_weights, holdings) if holdings else []
-            t = Text()
+            t = Text(justify="center")
             if rows:
                 total = sum(r["value"] for r in rows)
-                t.append(f"${total:,.0f} total\n", style="bold white")
+                t.append(f"${total:,.0f}\n", style="bold #00c040")
+                t.append("PORTFOLIO\n", style="dim #4a5568")
                 for r in rows[:2]:
                     w = r["weight"]
                     filled = round(w * 8)
                     bar = "█" * filled + "░" * (8 - filled)
-                    t.append(f"{r['ticker']}  {bar}  {w * 100:.0f}%\n", style="#5f87af")
+                    t.append(f"{r['ticker']}  {bar}\n", style="dim #5f87af")
             else:
-                t.append("No positions", style="dim")
+                t.append("—\n", style="dim")
+                t.append("NO POSITIONS", style="dim #4a5568")
             self.update(t)
         except Exception:
             self.update(Text("Portfolio unavailable", style="dim"))
+
+
+class FooterControls(Static):
+    """HUD footer bar showing music state and key hints."""
+
+    def on_mount(self) -> None:
+        self.set_muted(False)
+
+    def set_muted(self, muted: bool) -> None:
+        t = Text(justify="center")
+        if muted:
+            t.append("✕ MUTED", style="dim white")
+        else:
+            t.append("♪", style="bold #e8a020")
+        t.append("  M:MUTE  ·  1-6:NAV  ·  Q:QUIT", style="white")
+        self.update(t)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -236,6 +275,7 @@ class DashboardScreen(Screen):
         ("4", "push_game", "Game"),
         ("5", "push_portfolio", "Portfolio"),
         ("6", "push_music", "Music"),
+        ("m", "app.toggle_mute", "Mute"),
         ("q", "app.quit", "Quit"),
     ]
 
@@ -254,16 +294,19 @@ class DashboardScreen(Screen):
                 with Horizontal(id="lower"):
                     yield NotesWidget(id="notes-widget")
                     yield PortfolioWidget(id="portfolio-widget")
-        yield Static(
-            f'[italic #5f87af]"{get_quote()}"[/italic #5f87af]',
-            id="footer",
-        )
+        yield Static(_build_footer_markup(get_quote()), id="footer")
+        yield FooterControls(id="footer-controls")
 
     def on_show(self) -> None:
         try:
             self.query_one("#footer", Static).update(
-                f'[italic #5f87af]"{get_quote()}"[/italic #5f87af]'
+                _build_footer_markup(get_quote())
             )
+        except Exception:
+            pass
+        try:
+            muted = getattr(self.app, "_music_muted", False)
+            self.query_one(FooterControls).set_muted(muted)
         except Exception:
             pass
         try:
@@ -339,7 +382,7 @@ class HabitsScreen(Screen):
                 done = is_done_today(dates)
                 streak = calculate_streak(dates)
                 today_cell = Text("✓", style="bold #00c040") if done else Text("—", style="dim")
-                streak_cell = Text(f"{streak}d", style="#c0a000" if streak > 0 else "dim")
+                streak_cell = Text(f"{streak}d", style="#e8a020" if streak > 0 else "dim")
                 table.add_row(str(i), habit, today_cell, streak_cell)
         except Exception as e:
             self.query_one("#habits-msg", Static).update(
@@ -842,13 +885,36 @@ class DarkHourApp(App):
 
     def on_mount(self) -> None:
         self._music_proc = None
+        self._music_muted = False
         _boot_sound()
-        self.set_timer(2.0, self._start_music)
+        self.set_timer(0.8, self._start_music)
         config = load_config()
         self.push_screen(DashboardScreen(config["name"]))
 
     def _start_music(self) -> None:
         self._music_proc = _start_bg_music()
+        # Apply mute if the user pressed M during the 2s boot delay
+        if self._music_muted and self._music_proc:
+            try:
+                pgid = os.getpgid(self._music_proc.pid)
+                os.killpg(pgid, signal.SIGSTOP)
+            except Exception:
+                pass
+
+    def action_toggle_mute(self) -> None:
+        self._music_muted = not self._music_muted
+        proc = self._music_proc
+        if proc and proc.poll() is None:
+            try:
+                pgid = os.getpgid(proc.pid)
+                sig = signal.SIGSTOP if self._music_muted else signal.SIGCONT
+                os.killpg(pgid, sig)
+            except Exception:
+                pass
+        try:
+            self.query_one(FooterControls).set_muted(self._music_muted)
+        except Exception:
+            pass  # not on dashboard screen
 
 
 def main() -> None:
@@ -856,8 +922,12 @@ def main() -> None:
     try:
         app.run()
     finally:
-        if getattr(app, "_music_proc", None):
-            app._music_proc.terminate()
+        proc = getattr(app, "_music_proc", None)
+        if proc:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            except Exception:
+                proc.terminate()
     print("\n\033[2m\033[38;5;67mUntil the next Dark Hour.\033[0m\n")
 
 

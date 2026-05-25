@@ -1,5 +1,13 @@
 /* ============================================================
-   tui.tcss  —  Dark Hour Dashboard  (Persona 3 aesthetic)
+   tui.tcss  —  Dark Hour Dashboard  (Persona 3 × GTA aesthetic)
+   Color story:
+     Background  #060615  — near-black, cold
+     Surface     #0a0a1e  — dark navy
+     Border      #1e3a5f  — deep steel (base state)
+     Blue accent #4682b4  — steel blue (focus/hover)
+     Warm accent #e8a020  — amber gold (active, badges)
+     Green       #00c040  — completion
+     Red         #c03040  — error
    ============================================================ */
 
 /* ── Global ─────────────────────────────────────────────── */
@@ -16,7 +24,7 @@ Screen {
 
 DashboardHeader {
     height: 7;
-    border: double #4682b4;
+    border: double #1e3a5f;
     content-align: center middle;
     padding: 0 2;
 }
@@ -28,9 +36,19 @@ DashboardHeader {
 }
 
 NavSidebar {
-    width: 24;
-    border: double #4682b4;
-    padding: 1 1;
+    width: 22;
+    border: double #1e3a5f;
+    padding: 1 2;
+    layout: vertical;
+}
+
+#nav-items {
+    height: 1fr;
+}
+
+#nav-watermark {
+    height: 2;
+    text-align: left;
 }
 
 #main {
@@ -38,52 +56,64 @@ NavSidebar {
 }
 
 #upper {
-    height: 3fr;
+    height: 1fr;
 }
 
 #lower {
-    height: 2fr;
+    height: 1fr;
 }
+
+/* ── Dashboard: HUD cards ─────────────────────────────────── */
 
 HabitsWidget {
     width: 1fr;
-    border: double #4682b4;
-    padding: 0 2;
+    border: double #1e3a5f;
+    padding: 0 1;
+    content-align: center middle;
 }
 
 TasksWidget {
     width: 1fr;
-    border: double #4682b4;
-    padding: 0 2;
+    border: double #1e3a5f;
+    padding: 0 1;
+    content-align: center middle;
 }
 
 NotesWidget {
     width: 1fr;
-    border: double #4682b4;
-    padding: 0 2;
+    border: double #1e3a5f;
+    padding: 0 1;
+    content-align: center middle;
 }
 
 PortfolioWidget {
     width: 1fr;
-    border: double #4682b4;
-    padding: 0 2;
+    border: double #1e3a5f;
+    padding: 0 1;
+    content-align: center middle;
 }
 
 /* ── Dashboard: footer ───────────────────────────────────── */
 
 #footer {
     height: 3;
-    border: round #2a3a5a;
+    border: round #1e3a5f;
     color: #5f87af;
     content-align: center middle;
     text-style: italic;
+}
+
+#footer-controls {
+    height: 1;
+    content-align: center middle;
+    color: #2a3a5a;
 }
 
 /* ── Sub-screens: shared ─────────────────────────────────── */
 
 .sub-title {
     height: 3;
-    border: double #4682b4;
+    border: double #1e3a5f;
     content-align: center middle;
     text-style: bold;
     color: #f0f0ff;
@@ -106,13 +136,13 @@ PortfolioWidget {
 
 DataTable {
     height: 1fr;
-    border: double #4682b4;
+    border: double #1e3a5f;
     background: #060615;
 }
 
 DataTable > .datatable--header {
     background: #0a0a1e;
-    color: #87ceeb;
+    color: #e8a020;
     text-style: bold;
 }
 
@@ -128,20 +158,20 @@ DataTable > .datatable--hover {
 /* ── Input ───────────────────────────────────────────────── */
 
 Input {
-    border: double #4682b4;
+    border: double #1e3a5f;
     background: #0a0a1e;
     color: #f0f0ff;
 }
 
 Input:focus {
-    border: double #87ceeb;
+    border: double #e8a020;
 }
 
 /* ── Notes: scroll container ─────────────────────────────── */
 
 #notes-scroll {
     height: 1fr;
-    border: double #4682b4;
+    border: double #1e3a5f;
     background: #060615;
     padding: 0 1;
 }
@@ -160,7 +190,7 @@ Input:focus {
 
 #game-prompt {
     height: 1fr;
-    border: double #4682b4;
+    border: double #1e3a5f;
     content-align: center middle;
     text-align: center;
     color: #f0f0ff;
