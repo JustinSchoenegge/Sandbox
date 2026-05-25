@@ -1,0 +1,167 @@
+/* ============================================================
+   tui.tcss  —  Dark Hour Dashboard  (Persona 3 aesthetic)
+   ============================================================ */
+
+/* ── Global ─────────────────────────────────────────────── */
+
+Screen {
+    background: #060615;
+}
+
+.hidden {
+    display: none;
+}
+
+/* ── Dashboard: header ───────────────────────────────────── */
+
+DashboardHeader {
+    height: 7;
+    border: double #4682b4;
+    content-align: center middle;
+    padding: 0 2;
+}
+
+/* ── Dashboard: body ─────────────────────────────────────── */
+
+#body {
+    height: 1fr;
+}
+
+NavSidebar {
+    width: 24;
+    border: double #4682b4;
+    padding: 1 1;
+}
+
+#main {
+    width: 1fr;
+}
+
+#upper {
+    height: 3fr;
+}
+
+#lower {
+    height: 2fr;
+}
+
+HabitsWidget {
+    width: 1fr;
+    border: double #4682b4;
+    padding: 0 2;
+}
+
+TasksWidget {
+    width: 1fr;
+    border: double #4682b4;
+    padding: 0 2;
+}
+
+NotesWidget {
+    width: 1fr;
+    border: double #4682b4;
+    padding: 0 2;
+}
+
+PortfolioWidget {
+    width: 1fr;
+    border: double #4682b4;
+    padding: 0 2;
+}
+
+/* ── Dashboard: footer ───────────────────────────────────── */
+
+#footer {
+    height: 3;
+    border: round #2a3a5a;
+    color: #5f87af;
+    content-align: center middle;
+    text-style: italic;
+}
+
+/* ── Sub-screens: shared ─────────────────────────────────── */
+
+.sub-title {
+    height: 3;
+    border: double #4682b4;
+    content-align: center middle;
+    text-style: bold;
+    color: #f0f0ff;
+}
+
+.sub-msg {
+    height: 2;
+    padding: 0 1;
+    color: #f0f0ff;
+}
+
+.sub-hint {
+    height: 1;
+    content-align: center middle;
+    color: #2a3a5a;
+    text-style: dim;
+}
+
+/* ── DataTable ───────────────────────────────────────────── */
+
+DataTable {
+    height: 1fr;
+    border: double #4682b4;
+    background: #060615;
+}
+
+DataTable > .datatable--header {
+    background: #0a0a1e;
+    color: #87ceeb;
+    text-style: bold;
+}
+
+DataTable > .datatable--cursor {
+    background: #1a1a3a;
+    color: #f0f0ff;
+}
+
+DataTable > .datatable--hover {
+    background: #0d0d28;
+}
+
+/* ── Input ───────────────────────────────────────────────── */
+
+Input {
+    border: double #4682b4;
+    background: #0a0a1e;
+    color: #f0f0ff;
+}
+
+Input:focus {
+    border: double #87ceeb;
+}
+
+/* ── Notes: scroll container ─────────────────────────────── */
+
+#notes-scroll {
+    height: 1fr;
+    border: double #4682b4;
+    background: #060615;
+    padding: 0 1;
+}
+
+/* ── Music: dual inputs ──────────────────────────────────── */
+
+#music-inputs {
+    height: 3;
+}
+
+#music-inputs Input {
+    width: 1fr;
+}
+
+/* ── Game screen ─────────────────────────────────────────── */
+
+#game-prompt {
+    height: 1fr;
+    border: double #4682b4;
+    content-align: center middle;
+    text-align: center;
+    color: #f0f0ff;
+}
