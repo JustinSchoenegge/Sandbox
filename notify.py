@@ -1,21 +1,14 @@
 """
 notify.py — fire-and-forget iMessage notifications via AppleScript.
-Phone number is read from config.json notify_phone field.
+Phone number is read from NOTIFY_PHONE env var (set in .env, never committed).
 """
 
-import json
 import os
 import subprocess
 
-_CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
-
 
 def _get_phone() -> str:
-    try:
-        with open(_CONFIG_FILE) as f:
-            return json.load(f).get("notify_phone", "")
-    except Exception:
-        return ""
+    return os.environ.get("NOTIFY_PHONE", "")
 
 
 def _escape(s: str) -> str:
