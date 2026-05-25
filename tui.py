@@ -4,6 +4,7 @@ Persona 3 aesthetic.  Replaces app.py as the main entry point.
 """
 
 import os
+import shlex
 import subprocess
 from datetime import datetime
 
@@ -40,6 +41,19 @@ def _boot_sound() -> None:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+
+
+def _start_bg_music() -> "subprocess.Popen | None":
+    """Loop vicecity.m4a in the background. Returns the shell process so it can be terminated."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "vicecity.m4a")
+    if not os.path.exists(path):
+        return None
+    cmd = f"while true; do afplay {shlex.quote(path)}; done"
+    return subprocess.Popen(
+        ["bash", "-c", cmd],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -827,14 +841,23 @@ class DarkHourApp(App):
     CSS_PATH = "tui.tcss"
 
     def on_mount(self) -> None:
+        self._music_proc = None
         _boot_sound()
+        self.set_timer(2.0, self._start_music)
         config = load_config()
         self.push_screen(DashboardScreen(config["name"]))
+
+    def _start_music(self) -> None:
+        self._music_proc = _start_bg_music()
 
 
 def main() -> None:
     app = DarkHourApp()
-    app.run()
+    try:
+        app.run()
+    finally:
+        if getattr(app, "_music_proc", None):
+            app._music_proc.terminate()
     print("\n\033[2m\033[38;5;67mUntil the next Dark Hour.\033[0m\n")
 
 

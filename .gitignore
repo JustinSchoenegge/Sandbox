@@ -1,3 +1,7 @@
 scores.txt
 data/
 config.json
+.env
+__pycache__/
+*.pyc
+assets/vicecity.m4a
