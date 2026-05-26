@@ -58,8 +58,11 @@ def is_done_today(dates):
 
 def mark_done(data, habit):
     today = datetime.now().strftime("%Y-%m-%d")
-    if today not in data[habit]:
-        data[habit].append(today)
+    logs = data["logs"]
+    if today not in logs.get(habit, []):
+        if habit not in logs:
+            logs[habit] = []
+        logs[habit].append(today)
         save_habits(data)
         return True
     return False
