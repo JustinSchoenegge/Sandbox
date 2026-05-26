@@ -31,7 +31,15 @@ DEFAULTS = {
     "name": "User",
     "theme": "cyan",
     "created": "",
+    "is_admin": False,
 }
+
+# The JSON passphrase: this exact name grants admin access.
+_ADMIN_PASSPHRASE = "Jon Snow"
+
+
+def _check_admin(config: dict) -> bool:
+    return config.get("name") == _ADMIN_PASSPHRASE
 
 
 def load_config():
@@ -40,7 +48,9 @@ def load_config():
     try:
         with open(CONFIG_FILE) as f:
             config = json.load(f)
-        return {**DEFAULTS, **config}
+        merged = {**DEFAULTS, **config}
+        merged["is_admin"] = _check_admin(config)
+        return merged
     except json.JSONDecodeError:
         return first_run()
 

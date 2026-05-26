@@ -30,6 +30,10 @@ from notes import load_notes, save_notes
 from music import load_ideas, save_ideas
 from portfolio import load_portfolio, calculate_weights
 from game import main as play_game
+import permissions
+from memory import MemoryManager
+from watcher import Watcher
+from bot import Bot, BotOutput, load_persona
 
 load_env()
 
@@ -67,12 +71,26 @@ def _build_footer_markup(quote: str) -> str:
 # Dashboard widgets
 # ══════════════════════════════════════════════════════════════════════════════
 
+class HUDWidget(Static):
+    """Base for HUD cards: auto-refreshes on mount and when the screen is shown."""
+
+    def on_mount(self) -> None:
+        self.refresh_data()
+
+    def on_show(self) -> None:
+        self.refresh_data()
+
+    def refresh_data(self) -> None:
+        pass
+
+
 class DashboardHeader(Static):
     """Animated header with ASCII logo, city skyline, and live clock."""
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, is_admin: bool = False) -> None:
         super().__init__()
         self._user_name = name
+        self._is_admin = is_admin
 
     def on_mount(self) -> None:
         self._clock = ""
@@ -92,8 +110,25 @@ class DashboardHeader(Static):
         t.append("░█░ █▀█ ██▄   █▄▀ █▀█ █▀▄ █░█   █▀█ █▄█ █▄█ █▀▄\n", style="bold white")
         t.append("──────────────── ◐ ────────────────\n", style="dim #4a9eff")
         t.append(f"{get_greeting()}, {self._user_name}", style="bold #e8a020")
+        if self._is_admin:
+            t.append("  [ADMIN]", style="bold #ff2244")
         t.append(f"  ·  {self._date}  {self._clock}", style="dim #5f87af")
         return t
+
+
+# ── Screen navigation registry ────────────────────────────────────────────────
+# To add a new screen: one entry here. NavSidebar and DashboardScreen both
+# read from this list automatically.
+
+_NAV = [
+    ("1", "HABITS",    lambda _:    HabitsScreen()),
+    ("2", "TASKS",     lambda _:    TasksScreen()),
+    ("3", "NOTES",     lambda _:    NotesScreen()),
+    ("4", "GAME",      lambda name: GameScreen(name)),
+    ("5", "PORTFOLIO", lambda _:    PortfolioScreen()),
+    ("6", "MUSIC",     lambda _:    MusicScreen()),
+    ("7", "BOTS",      lambda _:    BotsScreen()),
+]
 
 
 class NavSidebar(Widget):
@@ -101,19 +136,12 @@ class NavSidebar(Widget):
 
     def compose(self) -> ComposeResult:
         nav = Text()
-        for key, label in [
-            ("1", "HABITS"),
-            ("2", "TASKS"),
-            ("3", "NOTES"),
-            ("4", "GAME"),
-            ("5", "PORTFOLIO"),
-            ("6", "MUSIC"),
-        ]:
+        for key, label, _ in _NAV:
             nav.append(f"[{key}]", style="bold #e8a020")
             nav.append(f"  {label}\n", style="bold white")
         nav.append("\n")
         nav.append("[q]", style="bold #e8a020")
-        nav.append("  QUIT", style="bold white")
+        nav.append("  QUIT\n", style="bold white")
         yield Static(nav, id="nav-items")
         yield Static(
             "[dim #1e3a5f]· · · · · · · ·\n[/dim #1e3a5f][dim #2a3a5a] DARK  HOUR[/dim #2a3a5a]",
@@ -247,6 +275,42 @@ class PortfolioWidget(Static):
             self.update(Text("Portfolio unavailable", style="dim"))
 
 
+class BotWidget(HUDWidget):
+    """HUD card: bot persona presence — name, trust level, last output preview."""
+
+    def refresh_data(self) -> None:
+        try:
+            bot: Bot | None = getattr(self.app, "_bot", None)
+            mem: MemoryManager | None = getattr(self.app, "_memory", None)
+            if bot is None:
+                self.update(Text("Bot offline", style="dim"))
+                return
+            trust = bot.trust_level
+            name = bot.name
+            level_nm = permissions.level_name(trust)
+            judged = mem.session_judgment_count if mem else 0
+            calls = mem.calls_today if mem else 0
+            limit = bot.persona.get("daily_call_limit", 50)
+            preview = (mem.last_output_preview if mem else "")
+
+            t = Text(justify="center")
+            t.append(f"{name}", style="bold #4a9eff")
+            t.append(f"  [L{trust}]\n", style="bold #e8a020")
+            t.append(f"{level_nm}\n", style="dim #5f87af")
+            if preview:
+                short = (preview[:34] + "…") if len(preview) > 34 else preview
+                t.append(f'"{short}"\n', style="italic dim #5f87af")
+            else:
+                t.append("no output yet\n", style="dim #2a3a5a")
+            api_color = "#c03040" if calls >= limit else ("#e8a020" if calls >= limit * 0.8 else "#2a3a5a")
+            t.append(f"{judged} judged  ·  ", style="dim #2a3a5a")
+            t.append(f"API {calls}/{limit}", style=f"dim {api_color}")
+            t.append("  ·  [7]", style="dim #2a3a5a")
+            self.update(t)
+        except Exception:
+            self.update(Text("Bot unavailable", style="dim"))
+
+
 class FooterControls(Static):
     """HUD footer bar showing music state and key hints."""
 
@@ -259,7 +323,7 @@ class FooterControls(Static):
             t.append("✕ MUTED", style="dim white")
         else:
             t.append("♪", style="bold #e8a020")
-        t.append("  M:MUTE  ·  1-6:NAV  ·  Q:QUIT", style="white")
+        t.append("  M:MUTE  ·  1-7:NAV  ·  Q:QUIT", style="white")
         self.update(t)
 
 
@@ -269,22 +333,24 @@ class FooterControls(Static):
 
 class DashboardScreen(Screen):
     BINDINGS = [
-        ("1", "push_habits", "Habits"),
-        ("2", "push_tasks", "Tasks"),
-        ("3", "push_notes", "Notes"),
-        ("4", "push_game", "Game"),
-        ("5", "push_portfolio", "Portfolio"),
-        ("6", "push_music", "Music"),
+        ("1", "push_screen_nav_0", "Habits"),
+        ("2", "push_screen_nav_1", "Tasks"),
+        ("3", "push_screen_nav_2", "Notes"),
+        ("4", "push_screen_nav_3", "Game"),
+        ("5", "push_screen_nav_4", "Portfolio"),
+        ("6", "push_screen_nav_5", "Music"),
+        ("7", "push_screen_nav_6", "Bots"),
         ("m", "app.toggle_mute", "Mute"),
         ("q", "app.quit", "Quit"),
     ]
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, is_admin: bool = False) -> None:
         super().__init__()
         self._name = name
+        self._is_admin = is_admin
 
     def compose(self) -> ComposeResult:
-        yield DashboardHeader(self._name)
+        yield DashboardHeader(self._name, self._is_admin)
         with Horizontal(id="body"):
             yield NavSidebar(id="sidebar")
             with Vertical(id="main"):
@@ -294,6 +360,7 @@ class DashboardScreen(Screen):
                 with Horizontal(id="lower"):
                     yield NotesWidget(id="notes-widget")
                     yield PortfolioWidget(id="portfolio-widget")
+                yield BotWidget(id="bot-widget")
         yield Static(_build_footer_markup(get_quote()), id="footer")
         yield FooterControls(id="footer-controls")
 
@@ -326,23 +393,26 @@ class DashboardScreen(Screen):
         except Exception:
             pass
 
-    def action_push_habits(self) -> None:
-        self.app.push_screen(HabitsScreen())
+    def action_push_screen_nav_0(self) -> None:
+        self.app.push_screen(_NAV[0][2](self._name))
 
-    def action_push_tasks(self) -> None:
-        self.app.push_screen(TasksScreen())
+    def action_push_screen_nav_1(self) -> None:
+        self.app.push_screen(_NAV[1][2](self._name))
 
-    def action_push_notes(self) -> None:
-        self.app.push_screen(NotesScreen())
+    def action_push_screen_nav_2(self) -> None:
+        self.app.push_screen(_NAV[2][2](self._name))
 
-    def action_push_game(self) -> None:
-        self.app.push_screen(GameScreen(self._name))
+    def action_push_screen_nav_3(self) -> None:
+        self.app.push_screen(_NAV[3][2](self._name))
 
-    def action_push_portfolio(self) -> None:
-        self.app.push_screen(PortfolioScreen())
+    def action_push_screen_nav_4(self) -> None:
+        self.app.push_screen(_NAV[4][2](self._name))
 
-    def action_push_music(self) -> None:
-        self.app.push_screen(MusicScreen())
+    def action_push_screen_nav_5(self) -> None:
+        self.app.push_screen(_NAV[5][2](self._name))
+
+    def action_push_screen_nav_6(self) -> None:
+        self.app.push_screen(_NAV[6][2](self._name))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -370,6 +440,7 @@ class HabitsScreen(Screen):
     def on_mount(self) -> None:
         self._mode = None
         self._populate_table()
+        self.query_one("#habits-table", DataTable).can_focus = False
 
     def _populate_table(self) -> None:
         table = self.query_one("#habits-table", DataTable)
@@ -488,6 +559,7 @@ class TasksScreen(Screen):
     def on_mount(self) -> None:
         self._mode = None
         self._populate_table()
+        self.query_one("#tasks-table", DataTable).can_focus = False
 
     def _populate_table(self) -> None:
         table = self.query_one("#tasks-table", DataTable)
@@ -694,6 +766,7 @@ class MusicScreen(Screen):
         self._mode = None
         self._pending_title = ""
         self._populate_table()
+        self.query_one("#music-table", DataTable).can_focus = False
 
     def on_show(self) -> None:
         self._populate_table()
@@ -877,6 +950,279 @@ class GameScreen(Screen):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Bots screen
+# ══════════════════════════════════════════════════════════════════════════════
+
+class BotsScreen(Screen):
+    BINDINGS = [
+        ("q", "app.pop_screen", "Back"),
+        ("o", "generate_observation", "Observe"),
+        ("m", "generate_music", "Music"),
+        ("a", "generate_art", "Art"),
+        ("y", "approve", "Approve"),
+        ("n", "reject", "Reject"),
+        ("plus", "trust_up", "Trust +"),
+        ("minus", "trust_down", "Trust -"),
+    ]
+
+    def compose(self) -> ComposeResult:
+        yield Static("", id="bots-title", classes="sub-title")
+        with Horizontal(id="bots-body"):
+            with ScrollableContainer(id="bots-history"):
+                yield Static("", id="history-content")
+            with Vertical(id="bots-right"):
+                yield Static("", id="pending-header")
+                yield Static("", id="pending-content")
+                yield Static("", id="pending-hint")
+        yield Static("", id="watcher-bar")
+        yield Static(
+            "[dim #2a3a5a]"
+            "[o] observe  [m] music  [a] art  "
+            "[y] approve  [n] reject  "
+            "[+/-] trust  [q] back"
+            "[/dim #2a3a5a]",
+            id="bots-keyhint",
+        )
+
+    def on_mount(self) -> None:
+        mem = getattr(self.app, "_memory", None)
+        self._history: list[dict] = [
+            {"time": j["time"], "type": j["type"], "verdict": j["verdict"]}
+            for j in (mem.session_judgments if mem else [])
+        ]
+        self._generating = False
+        self._refresh_title()
+        self._refresh_pending_display()
+        self._refresh_watcher()
+        self._refresh_history()
+        self.set_interval(5, self._refresh_watcher)
+
+    def on_show(self) -> None:
+        self._refresh_title()
+        self._refresh_watcher()
+        self._refresh_history()
+
+    def _refresh_title(self) -> None:
+        bot: Bot | None = getattr(self.app, "_bot", None)
+        if bot is None:
+            title = "BOTS — offline"
+        else:
+            t = bot.trust_level
+            title = f"BOTS  ·  {bot.name}  [L{t}: {permissions.level_name(t)}]"
+        try:
+            self.query_one("#bots-title", Static).update(f"[bold white]{title}[/bold white]")
+        except Exception:
+            pass
+
+    def _refresh_watcher(self) -> None:
+        watcher: Watcher | None = getattr(self.app, "_watcher", None)
+        bot: Bot | None = getattr(self.app, "_bot", None)
+        mem: MemoryManager | None = getattr(self.app, "_memory", None)
+        if watcher is None:
+            return
+        watcher.check_health(bot)
+        h = watcher.health
+        calls = mem.calls_today if mem else 0
+        limit = bot.persona.get("daily_call_limit", 50) if bot else 50
+        bar = Text(justify="center")
+        bar.append("WATCHER  ", style="dim #2a3a5a")
+        for label, ok in [("API", h.anthropic_api), ("MEM", h.memory_layer), ("♪", h.music_system), ("BOT", h.bot_online)]:
+            color = "#00c040" if ok else "#c03040"
+            bar.append("● " if ok else "○ ", style=f"bold {color}")
+            bar.append(f"{label}  ", style=f"dim {color}")
+        api_color = "#c03040" if calls >= limit else ("#e8a020" if calls >= limit * 0.8 else "#2a3a5a")
+        bar.append(f"CALLS:{calls}/{limit}  ", style=f"dim {api_color}")
+        bar.append(
+            f"QUEUE:{watcher.queue_depth}  FLAGS:{watcher.flag_count}  {watcher.last_check}",
+            style="dim #2a3a5a",
+        )
+        try:
+            self.query_one("#watcher-bar", Static).update(bar)
+        except Exception:
+            pass
+
+    def _refresh_pending_display(self) -> None:
+        bot: Bot | None = getattr(self.app, "_bot", None)
+        try:
+            header_w = self.query_one("#pending-header", Static)
+            content_w = self.query_one("#pending-content", Static)
+            hint_w    = self.query_one("#pending-hint", Static)
+        except Exception:
+            return
+
+        if self._generating:
+            header_w.update(Text("generating…", style="bold #e8a020"))
+            content_w.update(Text(""))
+            hint_w.update(Text(""))
+            return
+
+        if bot is None or bot.pending is None:
+            header_w.update(Text("— awaiting output —", style="dim #2a3a5a"))
+            content_w.update(Text(""))
+            hint_w.update(Text(""))
+            return
+
+        pending = bot.pending
+        type_colors = {
+            "observation": "#5f87af",
+            "music_spec":  "#e8a020",
+            "ascii_art":   "#4a9eff",
+            "commentary":  "#5f87af",
+        }
+        color = type_colors.get(pending.output_type, "#5f87af")
+        header_w.update(Text(f"[{pending.output_type.upper()}]  {pending.timestamp}", style=f"bold {color}"))
+        content_w.update(Text(pending.content, style="white"))
+        hint_w.update(Text("[y] approve    [n] reject", style="dim #e8a020"))
+
+    def _refresh_history(self) -> None:
+        try:
+            content_w = self.query_one("#history-content", Static)
+        except Exception:
+            return
+        if not self._history:
+            content_w.update(Text("No output yet this session.", style="dim #2a3a5a"))
+            return
+        _symbols = {"approved": "✓", "rejected": "✗", "blocked": "✕", "error": "!"}
+        _colors  = {"approved": "#00c040", "rejected": "#c03040", "blocked": "#e8a020", "error": "#c03040"}
+        t = Text()
+        for item in reversed(self._history[-30:]):
+            verdict = item.get("verdict", "?")
+            t.append(f"{item.get('time', '--:--')}  ", style="dim #2a3a5a")
+            t.append(f"[{item.get('type', '?')[:3]}]  ", style="dim #5f87af")
+            t.append(
+                f"{_symbols.get(verdict, '?')}\n",
+                style=f"bold {_colors.get(verdict, '#5f87af')}",
+            )
+        content_w.update(t)
+
+    def _build_context(self) -> dict:
+        ctx: dict = {}
+        try:
+            data = load_habits()
+            habits = data["habits"]
+            logs = data["logs"]
+            ctx["habits_done"]  = sum(1 for h in habits if is_done_today(logs.get(h, [])))
+            ctx["habits_total"] = len(habits)
+        except Exception:
+            pass
+        try:
+            ctx["tasks_remaining"] = sum(1 for t in load_tasks() if not t["done"])
+        except Exception:
+            pass
+        try:
+            ctx["notes_count"] = len(load_notes())
+        except Exception:
+            pass
+        return ctx
+
+    @work(exclusive=True)
+    async def _generate(self, gen_type: str) -> None:
+        import asyncio
+        bot: Bot | None = getattr(self.app, "_bot", None)
+        if bot is None:
+            return
+        self._generating = True
+        self._refresh_pending_display()
+
+        if gen_type == "observation":
+            output = await asyncio.to_thread(bot.generate_observation, self._build_context())
+        elif gen_type == "music_spec":
+            output = await asyncio.to_thread(bot.generate_music_spec)
+        elif gen_type == "ascii_art":
+            output = await asyncio.to_thread(bot.generate_ascii_art)
+        else:
+            self._generating = False
+            return
+
+        self._generating = False
+
+        if output.output_type == "blocked":
+            self._history.append({"time": output.timestamp, "type": "blocked", "verdict": "blocked"})
+            self._refresh_history()
+        elif bot.pending is None:
+            self._history.append({"time": output.timestamp, "type": "error", "verdict": "error"})
+            self._refresh_history()
+
+        self._refresh_pending_display()
+        self._refresh_watcher()
+
+    def _guard_pending(self) -> bool:
+        bot: Bot | None = getattr(self.app, "_bot", None)
+        if bot and bot.pending:
+            try:
+                self.query_one("#pending-hint", Static).update(
+                    Text("Judge current output first  [y] / [n]", style="bold #c03040")
+                )
+            except Exception:
+                pass
+            return True
+        return False
+
+    def action_generate_observation(self) -> None:
+        if not self._guard_pending():
+            self._generate("observation")
+
+    def action_generate_music(self) -> None:
+        if not self._guard_pending():
+            self._generate("music_spec")
+
+    def action_generate_art(self) -> None:
+        if not self._guard_pending():
+            self._generate("ascii_art")
+
+    def action_approve(self) -> None:
+        bot: Bot | None = getattr(self.app, "_bot", None)
+        if bot is None or bot.pending is None:
+            return
+        output = bot.record_verdict("approved")
+        if output:
+            self._history.append({"time": output.timestamp, "type": output.output_type, "verdict": "approved"})
+        self._refresh_pending_display()
+        self._refresh_history()
+        self._update_bot_widget()
+
+    def action_reject(self) -> None:
+        bot: Bot | None = getattr(self.app, "_bot", None)
+        if bot is None or bot.pending is None:
+            return
+        output = bot.record_verdict("rejected")
+        if output:
+            self._history.append({"time": output.timestamp, "type": output.output_type, "verdict": "rejected"})
+        self._refresh_pending_display()
+        self._refresh_history()
+
+    def action_trust_up(self) -> None:
+        bot: Bot | None = getattr(self.app, "_bot", None)
+        if bot is None:
+            return
+        new_level = bot.adjust_trust(+1)
+        self._refresh_title()
+        watcher: Watcher | None = getattr(self.app, "_watcher", None)
+        if watcher:
+            watcher.flag(f"Trust raised to {new_level} ({permissions.level_name(new_level)})", "info")
+        self._refresh_watcher()
+        self._update_bot_widget()
+
+    def action_trust_down(self) -> None:
+        bot: Bot | None = getattr(self.app, "_bot", None)
+        if bot is None:
+            return
+        new_level = bot.adjust_trust(-1)
+        self._refresh_title()
+        watcher: Watcher | None = getattr(self.app, "_watcher", None)
+        if watcher:
+            watcher.flag(f"Trust reduced to {new_level} ({permissions.level_name(new_level)})", "warning")
+        self._refresh_watcher()
+        self._update_bot_widget()
+
+    def _update_bot_widget(self) -> None:
+        try:
+            self.app.query_one("#bot-widget", BotWidget).refresh_data()
+        except Exception:
+            pass
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # App
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -889,7 +1235,11 @@ class DarkHourApp(App):
         _boot_sound()
         self.set_timer(0.8, self._start_music)
         config = load_config()
-        self.push_screen(DashboardScreen(config["name"]))
+        self.is_admin = config["is_admin"]
+        self._memory = MemoryManager()
+        self._watcher = Watcher()
+        self._bot = Bot(load_persona(), self._memory, self._watcher)
+        self.push_screen(DashboardScreen(config["name"], self.is_admin))
 
     def _start_music(self) -> None:
         self._music_proc = _start_bg_music()
@@ -918,6 +1268,7 @@ class DarkHourApp(App):
 
 
 def main() -> None:
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
     app = DarkHourApp()
     try:
         app.run()
@@ -928,6 +1279,12 @@ def main() -> None:
                 os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
             except Exception:
                 proc.terminate()
+        memory = getattr(app, "_memory", None)
+        if memory:
+            try:
+                memory.close_session()
+            except Exception:
+                pass
     print("\n\033[2m\033[38;5;67mUntil the next Dark Hour.\033[0m\n")
 
 

@@ -26,11 +26,15 @@ _cache = {}               # tag → questions string (process-scoped)
 _alignment_cache = {}     # (frozenset(goals), sector) → (label, style)
 
 
-def _get_client():
+def get_client():
     global _client
     if _client is None:
         _client = anthropic.Anthropic()
     return _client
+
+
+# internal alias so existing callers in this module don't break
+_get_client = get_client
 
 
 def get_all_tags(notes):

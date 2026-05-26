@@ -195,3 +195,76 @@ Input:focus {
     text-align: center;
     color: #f0f0ff;
 }
+
+/* ── Bot HUD card ─────────────────────────────────────────── */
+
+#bot-widget {
+    height: 5;
+    border: double #1a3a5a;
+    padding: 0 1;
+    content-align: center middle;
+    color: #4a9eff;
+}
+
+/* ── Bots screen ──────────────────────────────────────────── */
+
+#bots-title {
+    height: 3;
+    border: double #1a3a5a;
+    content-align: center middle;
+    text-style: bold;
+    color: #f0f0ff;
+}
+
+#bots-body {
+    height: 1fr;
+}
+
+#bots-history {
+    width: 2fr;
+    border: double #1e3a5f;
+    background: #060615;
+    padding: 0 1;
+}
+
+#history-content {
+    color: #f0f0ff;
+}
+
+#bots-right {
+    width: 3fr;
+    border: double #1a3a5a;
+    padding: 0 1;
+}
+
+#pending-header {
+    height: 2;
+    content-align: left middle;
+    color: #e8a020;
+    text-style: bold;
+}
+
+#pending-content {
+    height: 1fr;
+    color: #f0f0ff;
+}
+
+#pending-hint {
+    height: 2;
+    content-align: center middle;
+    color: #e8a020;
+}
+
+#watcher-bar {
+    height: 1;
+    content-align: center middle;
+    color: #2a3a5a;
+    background: #040410;
+}
+
+#bots-keyhint {
+    height: 1;
+    content-align: center middle;
+    color: #2a3a5a;
+    text-style: dim;
+}
