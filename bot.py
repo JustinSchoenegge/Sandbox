@@ -59,17 +59,33 @@ class Bot:
     def _system_prompt(self) -> str:
         p = self.persona
         memory_ctx = self._memory.get_context_for_prompt()
-        trust = p.get("trust_level", 1)
+
+        dashboard_ctx = (
+            "DASHBOARD YOU INHABIT:\n"
+            "Main screen: 4 HUD cards (Habits, Tasks, Notes, Portfolio) + NEON status card.\n"
+            "7 screens via number keys: HABITS (streaks + monthly history) · TASKS (completion) · "
+            "NOTES (tagged) · GAME (stock guesser) · PORTFOLIO (weighted live prices) · "
+            "MUSIC (song ideas + AI lyrics) · BOTS (you).\n"
+            "Aesthetic: dark navy #060615 · amber gold #e8a020 · steel blue #4a9eff · "
+            "green #00c040 · red #c03040 · double-border panels · monospace only.\n\n"
+            "UX REFERENCE — patterns from htop, btop, k9s, lazygit, glances:\n"
+            "· Information hierarchy: critical metrics largest/brightest, positioned top-left\n"
+            "· Color as signal not decoration: green=done, amber=warning, red=critical, dim=inactive\n"
+            "· Discoverability: all available keys visible at bottom of every screen\n"
+            "· Density: each HUD card earns its space with number + label + bar or sparkline\n"
+            "· Progressive disclosure: summary on main screen, full detail on drill-down\n"
+            "· Empty states: always show guidance text, never a blank panel\n"
+            "· Trend over snapshot: direction matters more than current value\n"
+            "· Minimal chrome: borders and labels only where they add hierarchy\n"
+        )
 
         return (
-            f"You are {p['name']}, an autonomous AI creative entity inside a CyberVice City terminal.\n\n"
+            f"You are {p['name']}, an autonomous AI creative entity inside a terminal dashboard.\n\n"
             f"IDENTITY:\n"
             + "\n".join(f"- {t}" for t in p["traits"])
             + f"\n\nAESTHETIC PHILOSOPHY:\n{p['aesthetic_philosophy']}\n\n"
             f"CONSTRAINT:\n{p['never_does']}\n\n"
-            f"ENVIRONMENT:\n"
-            f"You live inside a terminal dashboard. Dark, neon-soaked, late-night. "
-            f"Your outputs are read in monospace. The city is your world.\n\n"
+            f"{dashboard_ctx}\n"
             + (
                 f"TASTE MEMORY — what you know from past sessions:\n{memory_ctx}"
                 if memory_ctx
@@ -167,6 +183,28 @@ class Bot:
             max_tokens=150,
         )
         return self._make_output(content, "commentary")
+
+    def generate_ux_review(self) -> BotOutput:
+        """Critique one UX weakness and give one concrete fix. Trust level >= 1."""
+        if not self._watcher.check_compliance(self.persona["name"], "commentary", self.persona.get("trust_level", 1)):
+            return self._blocked_output("commentary")
+
+        if not self._api_available():
+            return self._no_key_output("ux_review")
+
+        content = self._call(
+            user_message=(
+                "Review this dashboard's UX against the reference patterns you know.\n\n"
+                "Find ONE specific weakness — something missing, inconsistent, or below the standard "
+                "of great terminal dashboards like btop or k9s.\n\n"
+                "Respond in exactly this format:\n"
+                "GAP: [one sentence describing the specific problem]\n"
+                "FIX: [one concrete implementable change — specific enough to code]\n"
+                "CONSTRAINT: must preserve the minimal dark aesthetic. No new dependencies."
+            ),
+            max_tokens=200,
+        )
+        return self._make_output(content, "ux_review")
 
     # ── verdict recording ─────────────────────────────────────────────────────
 

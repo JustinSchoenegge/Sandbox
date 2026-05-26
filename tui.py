@@ -957,6 +957,7 @@ class BotsScreen(Screen):
     BINDINGS = [
         ("q", "app.pop_screen", "Back"),
         ("o", "generate_observation", "Observe"),
+        ("u", "generate_ux", "UX Review"),
         ("m", "generate_music", "Music"),
         ("a", "generate_art", "Art"),
         ("y", "approve", "Approve"),
@@ -977,7 +978,7 @@ class BotsScreen(Screen):
         yield Static("", id="watcher-bar")
         yield Static(
             "[dim #2a3a5a]"
-            "[o] observe  [m] music  [a] art  "
+            "[o] observe  [u] ux review  [m] music  [a] art  "
             "[y] approve  [n] reject  "
             "[+/-] trust  [q] back"
             "[/dim #2a3a5a]",
@@ -1068,6 +1069,7 @@ class BotsScreen(Screen):
             "music_spec":  "#e8a020",
             "ascii_art":   "#4a9eff",
             "commentary":  "#5f87af",
+            "ux_review":   "#9b59b6",
         }
         color = type_colors.get(pending.output_type, "#5f87af")
         header_w.update(Text(f"[{pending.output_type.upper()}]  {pending.timestamp}", style=f"bold {color}"))
@@ -1126,6 +1128,8 @@ class BotsScreen(Screen):
 
         if gen_type == "observation":
             output = await asyncio.to_thread(bot.generate_observation, self._build_context())
+        elif gen_type == "ux_review":
+            output = await asyncio.to_thread(bot.generate_ux_review)
         elif gen_type == "music_spec":
             output = await asyncio.to_thread(bot.generate_music_spec)
         elif gen_type == "ascii_art":
@@ -1161,6 +1165,10 @@ class BotsScreen(Screen):
     def action_generate_observation(self) -> None:
         if not self._guard_pending():
             self._generate("observation")
+
+    def action_generate_ux(self) -> None:
+        if not self._guard_pending():
+            self._generate("ux_review")
 
     def action_generate_music(self) -> None:
         if not self._guard_pending():
