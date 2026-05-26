@@ -28,7 +28,7 @@ from habits import load_habits, is_done_today, calculate_streak, mark_done, save
 from tasks import load_tasks, save_tasks
 from notes import load_notes, save_notes
 from music import load_ideas, save_ideas
-from portfolio import load_portfolio, calculate_weights
+from portfolio import load_portfolio, calculate_weights, save_portfolio
 from game import main as play_game
 import permissions
 from memory import MemoryManager
@@ -864,19 +864,28 @@ class MusicScreen(Screen):
 class PortfolioScreen(Screen):
     BINDINGS = [
         ("q", "app.pop_screen", "Back"),
+        ("a", "add_mode", "Add"),
+        ("r", "remove_mode", "Remove"),
+        ("escape", "cancel_input", "Cancel"),
     ]
+
+    _TIERS = ["S+", "S", "A", "B", "C", "D", "F"]
 
     def compose(self) -> ComposeResult:
         yield Static("[bold white]═══  PORTFOLIO  ═══[/bold white]", classes="sub-title")
         yield DataTable(id="port-table", cursor_type="row", show_cursor=False)
-        yield Static("", id="port-summary", classes="sub-msg")
+        yield Input(placeholder="", id="port-input", classes="hidden")
+        yield Static("", id="port-msg", classes="sub-msg")
         yield Static(
-            "[dim #2a3a5a]q = back[/dim #2a3a5a]",
+            "[dim #2a3a5a]a = add position   r = remove   q = back[/dim #2a3a5a]",
             classes="sub-hint",
         )
 
     def on_mount(self) -> None:
+        self._mode: str | None = None
+        self._pending: dict = {}
         self._populate_table()
+        self.query_one("#port-table", DataTable).can_focus = False
 
     def on_show(self) -> None:
         self._populate_table()
@@ -885,12 +894,13 @@ class PortfolioScreen(Screen):
         table = self.query_one("#port-table", DataTable)
         table.clear(columns=True)
         table.add_columns("#", "Ticker", "Allocation", "Weight", "Tier")
-        summary = self.query_one("#port-summary", Static)
+        summary = self.query_one("#port-summary" if False else "#port-msg", Static)
         try:
             portfolio = load_portfolio()
             rows = calculate_weights(portfolio["holdings"]) if portfolio["holdings"] else []
+            msg = self.query_one("#port-msg", Static)
             if not rows:
-                summary.update(Text("No positions yet.", style="dim"))
+                msg.update(Text("No positions yet — press a to add one.", style="dim #2a3a5a"))
                 return
             total = sum(r["value"] for r in rows)
             for i, r in enumerate(rows, 1):
@@ -906,14 +916,101 @@ class PortfolioScreen(Screen):
                     Text(weight_str, style="#5f87af"),
                     Text(tier, style="bold white"),
                 )
-            summary.update(
-                Text(
-                    f"${total:,.2f} total  ·  {len(rows)} position(s)",
-                    style="dim #5f87af",
-                )
-            )
+            msg.update(Text(f"${total:,.2f} total  ·  {len(rows)} position(s)", style="dim #5f87af"))
         except Exception:
-            summary.update(Text("Portfolio unavailable.", style="dim"))
+            self.query_one("#port-msg", Static).update(Text("Portfolio unavailable.", style="dim"))
+
+    def _set_input(self, placeholder: str) -> None:
+        inp = self.query_one("#port-input", Input)
+        inp.placeholder = placeholder
+        inp.value = ""
+        inp.remove_class("hidden")
+        inp.focus()
+
+    def action_add_mode(self) -> None:
+        self._mode = "ticker"
+        self._pending = {}
+        self._set_input("Ticker (e.g. AAPL)…")
+
+    def action_remove_mode(self) -> None:
+        self._mode = "remove"
+        self._set_input("Position # to remove…")
+
+    def action_cancel_input(self) -> None:
+        self._mode = None
+        self._pending = {}
+        inp = self.query_one("#port-input", Input)
+        inp.add_class("hidden")
+        inp.value = ""
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        value = event.value.strip()
+        msg = self.query_one("#port-msg", Static)
+
+        if self._mode == "remove":
+            try:
+                portfolio = load_portfolio()
+                holdings = portfolio["holdings"]
+                if value.isdigit() and 0 < int(value) <= len(holdings):
+                    removed = holdings.pop(int(value) - 1)
+                    save_portfolio(portfolio)
+                    msg.update(Text(f"{removed['ticker']} removed.", style="bold #00c040"))
+                else:
+                    msg.update(Text(f"Enter 1–{len(holdings)}.", style="bold #c03040"))
+            except Exception:
+                msg.update(Text("Error removing position.", style="bold #c03040"))
+            self.action_cancel_input()
+            self._populate_table()
+            return
+
+        if self._mode == "ticker":
+            if not value:
+                msg.update(Text("Ticker cannot be empty.", style="bold #c03040"))
+                return
+            self._pending["ticker"] = value.upper()
+            self._mode = "shares"
+            self._set_input("Shares owned…")
+
+        elif self._mode == "shares":
+            if not value.replace(".", "").isdigit():
+                msg.update(Text("Enter a number for shares.", style="bold #c03040"))
+                return
+            self._pending["shares"] = float(value)
+            self._mode = "cost"
+            self._set_input("Avg cost per share ($)…")
+
+        elif self._mode == "cost":
+            if not value.replace(".", "").isdigit():
+                msg.update(Text("Enter a number for cost.", style="bold #c03040"))
+                return
+            self._pending["avg_cost"] = float(value)
+            self._mode = "tier"
+            tiers = "/".join(self._TIERS)
+            self._set_input(f"Tier ({tiers})…")
+
+        elif self._mode == "tier":
+            tier = value.upper()
+            if tier not in self._TIERS:
+                msg.update(Text(f"Tier must be one of: {', '.join(self._TIERS)}", style="bold #c03040"))
+                return
+            self._pending["tier"] = tier
+            try:
+                portfolio = load_portfolio()
+                ticker = self._pending["ticker"]
+                portfolio["holdings"].append({
+                    "ticker": ticker,
+                    "name": ticker,
+                    "sector": "Unknown",
+                    "shares": self._pending["shares"],
+                    "avg_cost": self._pending["avg_cost"],
+                    "tier": tier,
+                })
+                save_portfolio(portfolio)
+                msg.update(Text(f"{ticker} added.", style="bold #00c040"))
+            except Exception:
+                msg.update(Text("Error saving position.", style="bold #c03040"))
+            self.action_cancel_input()
+            self._populate_table()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
