@@ -1276,9 +1276,12 @@ def main() -> None:
         proc = getattr(app, "_music_proc", None)
         if proc:
             try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
             except Exception:
-                proc.terminate()
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
         memory = getattr(app, "_memory", None)
         if memory:
             try:
