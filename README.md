@@ -22,7 +22,7 @@ Built on Python + Textual. Aesthetic: dark navy, amber gold, Vice City neon.
 ## Prerequisites
 
 - Python 3.11+
-- An [Anthropic API key](https://console.anthropic.com)
+- An [Anthropic API key](https://console.anthropic.com) — see cost notes below
 - macOS (security and vitals modules use macOS-specific commands)
 
 ---
@@ -110,6 +110,33 @@ Prefix any chat message with `?` to run in sandbox mode — no memory written, n
 **Task templates:** Edit `TEMPLATES` in `tasks.py` to match your daily recurring tasks.
 
 **Color scheme:** Edit `tui.tcss`.
+
+---
+
+## API Cost
+
+NEON runs on Claude Sonnet 4.6. You pay Anthropic directly — there is no subscription or middleman. Add credit at [console.anthropic.com](https://console.anthropic.com).
+
+**What each interaction costs** (approximate):
+
+| Action | Cost |
+|--------|------|
+| Morning brief (auto on launch) | ~$0.004 |
+| One observation | ~$0.004 |
+| One chat turn | ~$0.006 |
+| Music spec or art | ~$0.005 |
+
+**Daily use estimates:**
+
+| Usage | Calls/day | Daily cost | $20 lasts |
+|-------|-----------|------------|-----------|
+| Light (brief + a few chats) | ~10 | ~$0.05 | 15+ months |
+| Regular | ~15 | ~$0.07 | ~9 months |
+| Heavy (near daily limit) | ~75 | ~$0.30 | ~2 months |
+
+The app enforces a **daily call limit** (default: 75) visible in the status bar as `CALLS: X/75`. It hard-stops at that number and resets at midnight. You can lower it in `data/bot_config.json` under `"daily_call_limit"`.
+
+$5–$20 in API credit is enough for most people to run this for several months of regular daily use.
 
 ---
 
