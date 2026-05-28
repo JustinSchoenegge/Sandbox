@@ -1665,7 +1665,7 @@ class BotsScreen(Screen):
                     t.append(f"{msg['content']}\n\n", style="dim #888" if is_test else "dim #c0c0d0")
             header_w.update(Text("CHAT", style="bold #4a9eff"))
             content_w.update(t)
-            hint_w.update(Text("[c] reply  [?msg] test  [Esc] exit  [o] observe", style="dim #2a3a5a"))
+            hint_w.update(Text("[c] reply  [o] observe  [Esc] exit", style="dim #2a3a5a"))
             return
 
         header_w.update(Text("— awaiting output —", style="dim #2a3a5a"))
