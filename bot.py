@@ -22,6 +22,36 @@ from watcher import Watcher
 
 PERSONA_FILE = "data/bot_config.json"
 
+TRAITS: dict[str, dict] = {
+    "power": {
+        "name": "POWER",
+        "symbol": "⚡",
+        "directive": (
+            "ACTIVE TRAIT — POWER: Cut through. Find the single most important signal "
+            "in this data and state exactly what action it demands. Directives, not suggestions. "
+            "No 'consider' or 'perhaps'. One clear call."
+        ),
+    },
+    "wisdom": {
+        "name": "WISDOM",
+        "symbol": "◈",
+        "directive": (
+            "ACTIVE TRAIT — WISDOM: Synthesize. Habits, money, tasks, and notes are one "
+            "interconnected system. Find the pattern beneath the surface — the connection "
+            "the operator hasn't named yet. Connect across domains."
+        ),
+    },
+    "courage": {
+        "name": "COURAGE",
+        "symbol": "◉",
+        "directive": (
+            "ACTIVE TRAIT — COURAGE: Name what is being avoided. Find the habit kept "
+            "skipping, the position held past its signal, the task moved to tomorrow again. "
+            "Say it plainly. No softening."
+        ),
+    },
+}
+
 # ── Default persona — customize in data/bot_config.json ───────────────────────
 DEFAULT_PERSONA: dict = {
     "name": "NEON",
@@ -52,6 +82,7 @@ class Bot:
         self._pending: Optional[BotOutput] = None
         self._conversation: list[dict] = []  # multi-turn chat thread (session-scoped)
         self._corpus_cache: Optional[str] = None
+        self._active_trait: Optional[str] = None
 
     def _api_available(self) -> bool:
         key = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -112,6 +143,10 @@ class Bot:
 
     def invalidate_corpus_cache(self) -> None:
         self._corpus_cache = None
+
+    def set_trait(self, trait: Optional[str]) -> None:
+        """Set the active trait (power/wisdom/courage/None) for the next generation."""
+        self._active_trait = trait if trait in TRAITS else None
 
     # ── generation ────────────────────────────────────────────────────────────
 
@@ -302,8 +337,11 @@ class Bot:
             messages = list(full[:2]) + list(full[-MAX_HISTORY:])
         else:
             messages = list(full)
+        trait_directive = ""
+        if self._active_trait and self._active_trait in TRAITS:
+            trait_directive = TRAITS[self._active_trait]["directive"] + "\n\n"
         if messages and messages[0]["role"] == "user":
-            messages[0] = {"role": "user", "content": trust_prefix + messages[0]["content"]}
+            messages[0] = {"role": "user", "content": trust_prefix + trait_directive + messages[0]["content"]}
         try:
             response = get_client().messages.create(
                 model="claude-sonnet-4-6",
@@ -386,6 +424,81 @@ class Bot:
             max_tokens=300,
         )
         return self._make_output(content, "commentary")
+
+    def generate_synthesis(self, context: dict) -> BotOutput:
+        """Cross-domain synthesis across all data. Requires trust level >= 4."""
+        if not self._watcher.check_compliance(self.persona["name"], "autonomous_create", self.persona.get("trust_level", 1)):
+            return self._blocked_output("autonomous_create")
+        if not self._api_available():
+            return self._no_key_output("synthesis")
+
+        parts = []
+        if context.get("habit_trends"):
+            trends = context["habit_trends"]
+            trend_strs = [f'{t["habit"][:10]}:{t["pct_30"]}%{t["trend"]}' for t in trends]
+            parts.append(f"Habits (30-day): {', '.join(trend_strs)}")
+            if context.get("habit_avg_30") is not None:
+                worst = min(trends, key=lambda x: x["pct_30"])
+                best  = max(trends, key=lambda x: x["pct_30"])
+                parts.append(f"Avg: {context['habit_avg_30']}%  Best: {best['habit']}  Worst: {worst['habit']}:{worst['pct_30']}%")
+        if context.get("tasks_remaining") is not None:
+            open_t = context.get("tasks_open", [])
+            parts.append(f"Tasks open: {context['tasks_remaining']} — {', '.join(open_t[:4])}")
+        if context.get("notes_count"):
+            parts.append(f"Notes: {context['notes_count']} logged")
+        if context.get("portfolio_top"):
+            top = context["portfolio_top"]
+            port_text = "  ".join(f'{p["ticker"]} {p["weight"]}% (P&L {p["pnl"]:+.1f}%)' for p in top)
+            parts.append(f"Portfolio: {port_text}")
+        if context.get("music_ideas"):
+            parts.append(f"Music ideas: {len(context['music_ideas'])} logged")
+        ctx_text = "\n".join(parts) if parts else "Dashboard just opened."
+
+        content = self._call(
+            user_message=(
+                f"Full dashboard state:\n{ctx_text}\n\n"
+                "Generate a cross-domain synthesis. Find the connection between at least two "
+                "different areas of this data — habits and portfolio, tasks and habits, notes "
+                "and money — whatever the data actually suggests. 2-4 sentences. "
+                "No generic observations. Find the specific signal that only exists because "
+                "you can see all of it at once."
+            ),
+            max_tokens=280,
+        )
+        return self._make_output(content, "synthesis")
+
+    def generate_portfolio_narrative(self, context: dict) -> BotOutput:
+        """Portfolio position narrative. Requires trust level >= 3."""
+        if not self._watcher.check_compliance(self.persona["name"], "observations", self.persona.get("trust_level", 1)):
+            return self._blocked_output("observations")
+        if not self._api_available():
+            return self._no_key_output("portfolio_narrative")
+
+        portfolio = context.get("portfolio_top", [])
+        if not portfolio:
+            content = "[No portfolio data — add positions on the Portfolio screen first]"
+            return self._make_output(content, "portfolio_narrative")
+
+        port_lines = []
+        for p in portfolio:
+            port_lines.append(
+                f'{p["ticker"]}: {p["weight"]}% of portfolio, P&L {p["pnl"]:+.1f}%'
+                + (f', {p["shares"]} shares' if p.get("shares") else "")
+            )
+        goals = context.get("portfolio_goals", ["not set"])
+        goal_text = ", ".join(goals) if goals else "not defined"
+
+        content = self._call(
+            user_message=(
+                f"Portfolio positions:\n" + "\n".join(port_lines) + f"\n\nStated goals: {goal_text}\n\n"
+                "Generate a portfolio narrative. Interpret these positions as a whole — "
+                "what is actually being built here, what the allocation says about conviction, "
+                "which positions are aligned with the stated goals and which are not. "
+                "3-5 sentences. Be direct about what works and what doesn't."
+            ),
+            max_tokens=320,
+        )
+        return self._make_output(content, "portfolio_narrative")
 
     def generate_ux_review(self) -> BotOutput:
         """Critique one UX weakness and give one concrete fix. Trust level >= 1."""
@@ -471,6 +584,9 @@ class Bot:
             f"[Trust level: {trust}/5 — {permissions.level_name(trust)}. "
             f"Capabilities: {', '.join(permissions.capabilities(trust)) or 'none'}]\n\n"
         )
+        trait_directive = ""
+        if self._active_trait and self._active_trait in TRAITS:
+            trait_directive = TRAITS[self._active_trait]["directive"] + "\n\n"
         try:
             response = get_client().messages.create(
                 model="claude-sonnet-4-6",
@@ -480,7 +596,7 @@ class Bot:
                     "text": self._system_prompt(),
                     "cache_control": {"type": "ephemeral"},
                 }],
-                messages=[{"role": "user", "content": trust_line + user_message}],
+                messages=[{"role": "user", "content": trust_line + trait_directive + user_message}],
             )
             self._memory.increment_daily_calls()
             return response.content[0].text.strip()

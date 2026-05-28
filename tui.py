@@ -488,7 +488,7 @@ class DashboardScreen(Screen):
         ("7", "push_screen_nav_6", "Bots"),
         ("8", "push_screen_nav_7", "Security"),
         ("m", "app.toggle_mute", "Mute"),
-        ("q", "app.quit", "Quit"),
+        ("q", "app.action_quit_confirm", "Quit"),
     ]
 
     def __init__(self, name: str, is_admin: bool = False) -> None:
@@ -1496,6 +1496,9 @@ class BotsScreen(Screen):
         ("plus", "trust_up", "Trust +"),
         ("minus", "trust_down", "Trust -"),
         ("escape", "cancel_ask", "Cancel"),
+        ("t", "cycle_trait", "Trait"),
+        ("x", "generate_synthesis", "Synthesis"),
+        ("v", "generate_portfolio", "Portfolio"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -1512,6 +1515,7 @@ class BotsScreen(Screen):
         yield Static(
             "[dim #2a3a5a]"
             "[[c]] chat  [[o]] observe  [[u]] ux  [[m]] music  [[a]] art  "
+            "[[t]] trait  [[x]] synthesis  [[v]] portfolio  "
             "[[y]] approve output  [[n]] reject  [[s]] save chat  "
             "[[e]] export notes  [[p]] persona  [+/-] trust  [[q]] back"
             "[/dim #2a3a5a]",
@@ -1531,6 +1535,7 @@ class BotsScreen(Screen):
         self._trust_pending: str | None = None
         self._insp_count: int = inspiration_count()
         self._watcher_timer = None
+        self._active_trait: str | None = None
         self._refresh_title()
         self._refresh_pending_display()
         self._refresh_watcher()
@@ -1583,8 +1588,13 @@ class BotsScreen(Screen):
         else:
             t = bot.trust_level
             title = f"BOTS  ·  {bot.name}  [L{t}: {permissions.level_name(t)}]"
+        trait_part = ""
+        if getattr(self, "_active_trait", None):
+            from bot import TRAITS
+            tr = TRAITS.get(self._active_trait, {})
+            trait_part = f"  [{tr.get('symbol', '')} {tr.get('name', '')}]"
         try:
-            self.query_one("#bots-title", Static).update(f"[bold white]{title}[/bold white]")
+            self.query_one("#bots-title", Static).update(f"[bold white]{title}{trait_part}[/bold white]")
         except Exception:
             pass
 
@@ -1719,6 +1729,10 @@ class BotsScreen(Screen):
             output = await asyncio.to_thread(bot.chat, prompt, self._build_context())
         elif gen_type == "test":
             output = await asyncio.to_thread(bot.test_response, prompt)
+        elif gen_type == "synthesis":
+            output = await asyncio.to_thread(bot.generate_synthesis, self._build_context())
+        elif gen_type == "portfolio_narrative":
+            output = await asyncio.to_thread(bot.generate_portfolio_narrative, self._build_context())
         else:
             self._generating = False
             return
@@ -1789,6 +1803,23 @@ class BotsScreen(Screen):
         if not self._guard_pending():
             self._generate("ascii_art")
 
+    def action_cycle_trait(self) -> None:
+        order = [None, "power", "wisdom", "courage"]
+        idx = order.index(self._active_trait) if self._active_trait in order else 0
+        self._active_trait = order[(idx + 1) % len(order)]
+        bot = getattr(self.app, "_bot", None)
+        if bot:
+            bot.set_trait(self._active_trait)
+        self._refresh_title()
+
+    def action_generate_synthesis(self) -> None:
+        if not self._guard_pending():
+            self._generate("synthesis")
+
+    def action_generate_portfolio(self) -> None:
+        if not self._guard_pending():
+            self._generate("portfolio_narrative")
+
     def action_ask_mode(self) -> None:
         self._trust_pending = None
         if self._guard_pending():
@@ -1818,9 +1849,11 @@ class BotsScreen(Screen):
             self._generate("observation", extra=value)
         elif value.startswith("?") and len(value) > 1:
             self._input_mode = "ask"
+            inp.focus()
             self._generate("test", prompt=value[1:].strip())
         elif value:
             self._input_mode = "ask"
+            inp.focus()
             self._generate("chat", prompt=value)
 
     def action_approve(self) -> None:
@@ -2353,6 +2386,17 @@ class DarkHourApp(App):
             self.query_one(FooterControls).set_muted(self._music_muted, self._current_song)
         except Exception:
             pass  # not on dashboard screen
+
+    def action_quit_confirm(self) -> None:
+        if getattr(self, "_quit_pending", False):
+            self.exit()
+        else:
+            self._quit_pending = True
+            self.call_later(self._clear_quit_pending)
+            self.notify("Press q again to quit", severity="warning", timeout=2)
+
+    def _clear_quit_pending(self) -> None:
+        self._quit_pending = False
 
 
 def main() -> None:
