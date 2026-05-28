@@ -93,6 +93,7 @@ class Bot:
     def _system_prompt(self) -> str:
         p = self.persona
         memory_ctx = self._memory.get_context_for_prompt()
+        verbatim_ctx = self._memory.get_verbatim_examples()
 
         dashboard_ctx = (
             "DASHBOARD YOU INHABIT:\n"
@@ -135,9 +136,15 @@ class Bot:
                 else ""
             )
             + (
-                f"TASTE MEMORY — what you know from past sessions:\n{memory_ctx}"
+                f"TASTE MEMORY — session history:\n{memory_ctx}\n\n"
                 if memory_ctx
-                else "TASTE MEMORY — no prior sessions. You are observing for the first time."
+                else "TASTE MEMORY — no prior sessions. You are observing for the first time.\n\n"
+            )
+            + (
+                f"APPROVED OUTPUTS — what the operator has valued (read these to calibrate your voice, "
+                f"specificity, and format):\n{verbatim_ctx}"
+                if verbatim_ctx
+                else ""
             )
         )
 

@@ -38,9 +38,16 @@ def run_checks():
     good = "enabled" in out.lower()
     results.append(("Gatekeeper", "ENABLED" if good else "DISABLED", good))
 
-    # Screen lock on wake
-    out = _run(["defaults", "read", "com.apple.screensaver", "askForPassword"])
-    good = out.strip() == "1"
+    # Screen lock on wake — macOS Ventura+ stores this via sysadminctl, not defaults
+    out = _run(["sysadminctl", "-screenLock", "status"])
+    if "delay is" in out:
+        good = "immediate" in out or ("off" not in out.lower() and "not set" not in out.lower())
+    else:
+        # Fallback for older macOS
+        out = _run(["defaults", "-currentHost", "read", "com.apple.screensaver", "askForPassword"])
+        if not out:
+            out = _run(["defaults", "read", "com.apple.screensaver", "askForPassword"])
+        good = out.strip() == "1"
     results.append(("Screen Lock on Wake", "ENABLED" if good else "DISABLED", good))
 
     # Remote Login (SSH) — OFF is the safe state

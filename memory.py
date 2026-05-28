@@ -16,12 +16,15 @@ from storage import atomic_save
 MEMORY_FILE = "data/bot_memory.json"
 _MAX_SUMMARIES = 12   # total summaries kept on disk
 _PROMPT_SUMMARIES = 5 # how many get injected into each prompt
+_MAX_VERBATIM = 8     # verbatim approved outputs kept — NEON reads these to calibrate style
+_MAX_VERBATIM_CHARS = 2400  # total char budget for verbatim injection
 
 
 class MemoryManager:
     def __init__(self) -> None:
         self._summaries: list[dict] = []
         self._session_judgments: list[dict] = []
+        self._approved_verbatim: list[dict] = []  # full content of approved outputs
         self._session_start = datetime.now().strftime("%Y-%m-%d %H:%M")
         self._last_output_preview: str = ""
         self._daily_calls: int = 0
@@ -37,6 +40,7 @@ class MemoryManager:
             with open(MEMORY_FILE, encoding="utf-8") as f:
                 data = json.load(f)
             self._summaries = data.get("summaries", [])[-_MAX_SUMMARIES:]
+            self._approved_verbatim = data.get("approved_verbatim", [])[-_MAX_VERBATIM:]
             self._last_output_preview = data.get("last_output_preview", "")
             self._daily_calls = data.get("daily_calls", 0)
             self._call_date = data.get("call_date", "")
@@ -46,6 +50,7 @@ class MemoryManager:
     def _save(self) -> None:
         atomic_save(MEMORY_FILE, {
             "summaries": self._summaries,
+            "approved_verbatim": self._approved_verbatim,
             "last_output_preview": self._last_output_preview,
             "updated": datetime.now().strftime("%Y-%m-%d %H:%M"),
             "daily_calls": self._daily_calls,
@@ -63,6 +68,13 @@ class MemoryManager:
         })
         if verdict == "approved":
             self._last_output_preview = content_preview[:120]
+            self._approved_verbatim.append({
+                "type": output_type,
+                "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "content": content_preview,
+            })
+            self._approved_verbatim = self._approved_verbatim[-_MAX_VERBATIM:]
+            self._save()
 
     def close_session(self) -> None:
         """Compress this session to a summary and persist. Call on app exit."""
@@ -97,12 +109,32 @@ class MemoryManager:
     # ── prompt context ────────────────────────────────────────────────────────
 
     def get_context_for_prompt(self) -> str:
-        """Return recent summaries formatted for injection into a system prompt."""
+        """Return recent session summaries formatted for system prompt injection."""
         recent = self._summaries[-_PROMPT_SUMMARIES:]
         if not recent:
             return ""
         lines = [f"[{s['date']}] {s['summary']}" for s in recent]
         return "\n".join(lines)
+
+    def get_verbatim_examples(self) -> str:
+        """Return verbatim approved outputs for system prompt injection.
+
+        These give NEON concrete examples of what the operator valued — style,
+        specificity, format — rather than the lossy session summaries.
+        """
+        if not self._approved_verbatim:
+            return ""
+        parts: list[str] = []
+        total = 0
+        for entry in reversed(self._approved_verbatim):
+            block = f"[{entry['type']} · {entry['date']}]\n{entry['content']}"
+            if total + len(block) > _MAX_VERBATIM_CHARS:
+                break
+            parts.append(block)
+            total += len(block)
+        if not parts:
+            return ""
+        return "\n\n".join(reversed(parts))
 
     # ── stats ─────────────────────────────────────────────────────────────────
 

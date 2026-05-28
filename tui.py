@@ -461,13 +461,31 @@ class VitalsBar(Static):
 
             temp = data.get("temp")
             t.append("TEMP ", style="dim #5f87af")
-            t.append(temp if temp else "—", style="dim #5f87af" if not temp else "#e8a020")
+            if temp:
+                try:
+                    temp_c = float(temp.replace("°C", "").replace("°F", "").strip())
+                    temp_style = "#00c040" if temp_c < 50 else ("#e8a020" if temp_c < 70 else "bold #c03040")
+                except ValueError:
+                    temp_style = "#e8a020"
+                t.append(temp, style=temp_style)
+            else:
+                t.append("—", style="dim #5f87af")
 
             t.append("  ·  ", style="dim #1e3a5f")
 
             fan = data.get("fan")
             t.append("FAN ", style="dim #5f87af")
-            t.append(fan if fan else "—", style="dim #5f87af")
+            if fan:
+                # Color the thermal state suffix if present (e.g. "2x · nom")
+                if " · " in fan:
+                    prefix, state = fan.rsplit(" · ", 1)
+                    t.append(f"{prefix} · ", style="#5f87af")
+                    state_style = {"nom": "#00c040", "fair": "#e8a020", "srs!": "bold #c03040", "CRIT": "bold #c03040"}.get(state, "#5f87af")
+                    t.append(state, style=state_style)
+                else:
+                    t.append(fan, style="#5f87af")
+            else:
+                t.append("—", style="dim #5f87af")
 
             self.update(t)
         except Exception:
@@ -1716,58 +1734,65 @@ class BotsScreen(Screen):
             return
         self._generating = True
         self._refresh_pending_display()
+        try:
+            if gen_type == "observation":
+                output = await asyncio.to_thread(bot.generate_observation, self._build_context(), extra)
+            elif gen_type == "ux_review":
+                output = await asyncio.to_thread(bot.generate_ux_review)
+            elif gen_type == "music_spec":
+                output = await asyncio.to_thread(bot.generate_music_spec)
+            elif gen_type == "ascii_art":
+                output = await asyncio.to_thread(bot.generate_ascii_art)
+            elif gen_type == "chat":
+                output = await asyncio.to_thread(bot.chat, prompt, self._build_context())
+            elif gen_type == "test":
+                output = await asyncio.to_thread(bot.test_response, prompt)
+            elif gen_type == "synthesis":
+                output = await asyncio.to_thread(bot.generate_synthesis, self._build_context())
+            elif gen_type == "portfolio_narrative":
+                output = await asyncio.to_thread(bot.generate_portfolio_narrative, self._build_context())
+            else:
+                return
 
-        if gen_type == "observation":
-            output = await asyncio.to_thread(bot.generate_observation, self._build_context(), extra)
-        elif gen_type == "ux_review":
-            output = await asyncio.to_thread(bot.generate_ux_review)
-        elif gen_type == "music_spec":
-            output = await asyncio.to_thread(bot.generate_music_spec)
-        elif gen_type == "ascii_art":
-            output = await asyncio.to_thread(bot.generate_ascii_art)
-        elif gen_type == "chat":
-            output = await asyncio.to_thread(bot.chat, prompt, self._build_context())
-        elif gen_type == "test":
-            output = await asyncio.to_thread(bot.test_response, prompt)
-        elif gen_type == "synthesis":
-            output = await asyncio.to_thread(bot.generate_synthesis, self._build_context())
-        elif gen_type == "portfolio_narrative":
-            output = await asyncio.to_thread(bot.generate_portfolio_narrative, self._build_context())
-        else:
+            if output.output_type == "blocked":
+                self._history.append({"time": output.timestamp, "type": "blocked", "verdict": "blocked", "content": ""})
+                self._refresh_history()
+            elif gen_type == "chat":
+                self._chat_thread.append({"role": "user",      "content": prompt,          "time": output.timestamp})
+                self._chat_thread.append({"role": "assistant", "content": output.content,  "time": output.timestamp})
+                self._history.append({"time": output.timestamp, "type": "chat", "verdict": "approved", "content": output.content})
+                self._refresh_history()
+                try:
+                    self.query_one("#bots-input", Input).focus()
+                except Exception:
+                    pass
+            elif gen_type == "test":
+                self._chat_thread.append({"role": "user",      "content": f"? {prompt}",   "time": output.timestamp, "test": True})
+                self._chat_thread.append({"role": "assistant", "content": output.content,  "time": output.timestamp, "test": True})
+                self._refresh_history()
+                try:
+                    self.query_one("#bots-input", Input).focus()
+                except Exception:
+                    pass
+            elif bot.pending is None:
+                self._history.append({"time": output.timestamp, "type": "error", "verdict": "error", "content": ""})
+                self._refresh_history()
+            else:
+                first_line = output.content.split("\n")[0][:120]
+                notify(f"NEON: {first_line}")
+
+        except Exception as e:
+            self._history.append({
+                "time": datetime.now().strftime("%H:%M"),
+                "type": "error",
+                "verdict": "error",
+                "content": str(e)[:120],
+            })
+            self._refresh_history()
+        finally:
             self._generating = False
-            return
-
-        self._generating = False
-
-        if output.output_type == "blocked":
-            self._history.append({"time": output.timestamp, "type": "blocked", "verdict": "blocked", "content": ""})
-            self._refresh_history()
-        elif gen_type == "chat":
-            self._chat_thread.append({"role": "user",      "content": prompt,          "time": output.timestamp})
-            self._chat_thread.append({"role": "assistant", "content": output.content,  "time": output.timestamp})
-            self._history.append({"time": output.timestamp, "type": "chat", "verdict": "approved", "content": output.content})
-            self._refresh_history()
-            try:
-                self.query_one("#bots-input", Input).focus()
-            except Exception:
-                pass
-        elif gen_type == "test":
-            self._chat_thread.append({"role": "user",      "content": f"? {prompt}",   "time": output.timestamp, "test": True})
-            self._chat_thread.append({"role": "assistant", "content": output.content,  "time": output.timestamp, "test": True})
-            self._refresh_history()
-            try:
-                self.query_one("#bots-input", Input).focus()
-            except Exception:
-                pass
-        elif bot.pending is None:
-            self._history.append({"time": output.timestamp, "type": "error", "verdict": "error", "content": ""})
-            self._refresh_history()
-        else:
-            first_line = output.content.split("\n")[0][:120]
-            notify(f"NEON: {first_line}")
-
-        self._refresh_pending_display()
-        self._refresh_watcher()
+            self._refresh_pending_display()
+            self._refresh_watcher()
 
     def _guard_pending(self) -> bool:
         bot: Bot | None = getattr(self.app, "_bot", None)
@@ -2402,7 +2427,7 @@ class DarkHourApp(App):
             self.exit()
         else:
             self._quit_pending = True
-            self.call_later(self._clear_quit_pending)
+            self.set_timer(2, self._clear_quit_pending)
             self.notify("Press q again to quit", severity="warning", timeout=2)
 
     def _clear_quit_pending(self) -> None:

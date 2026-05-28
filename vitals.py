@@ -1,7 +1,9 @@
 """vitals.py — system stats for the Dark Hour vitals bar."""
 
+import re
 import shutil
 import subprocess
+from typing import Optional
 
 
 def _run(cmd, timeout=2):
@@ -12,27 +14,72 @@ def _run(cmd, timeout=2):
         return ""
 
 
-def _get_temp():
+def _thermal_state() -> Optional[str]:
+    """Read NSProcessInfo.thermalState via objc runtime — no sudo, works on Apple Silicon."""
+    try:
+        import ctypes, ctypes.util
+        lib = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc"))
+        lib.objc_getClass.restype = ctypes.c_void_p
+        lib.sel_registerName.restype = ctypes.c_void_p
+        lib.objc_msgSend.restype = ctypes.c_long
+        lib.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        cls  = lib.objc_getClass(b"NSProcessInfo")
+        proc = lib.objc_msgSend(cls, lib.sel_registerName(b"processInfo"))
+        idx  = int(lib.objc_msgSend(proc, lib.sel_registerName(b"thermalState")))
+        return ["nom", "fair", "srs!", "CRIT"][max(0, min(3, idx))]
+    except Exception:
+        return None
+
+
+def _get_temp() -> Optional[str]:
+    # osx-cpu-temp works on Intel; on Apple Silicon it returns 0.0°C
     if shutil.which("osx-cpu-temp"):
         val = _run(["osx-cpu-temp"])
-        if val:
+        if val and not val.startswith("0.0"):
             return val
+
     if shutil.which("istats"):
         val = _run(["istats", "cpu", "--value-only"])
         if val:
             return f"{val}°C"
+
+    # Apple Silicon fallback: battery temperature from IORegistry.
+    # Unit is 0.1 K (e.g. 2995 → 299.5 K → 26.4°C). Sanity-checked to 5–60°C.
+    try:
+        out = _run(["ioreg", "-rn", "AppleSmartBattery"], timeout=3)
+        m = re.search(r'"Temperature"\s*=\s*(\d+)', out)
+        if m:
+            celsius = int(m.group(1)) / 10.0 - 273.15
+            if 5 <= celsius <= 60:
+                return f"{celsius:.0f}°C"
+    except Exception:
+        pass
+
     return None
 
 
-def _get_fan():
+def _get_fan() -> Optional[str]:
     if shutil.which("osx-cpu-temp"):
         val = _run(["osx-cpu-temp", "-f"])
-        if val:
-            return val
+        # Intel: "1225 RPM" lines
+        rpm_vals = re.findall(r'(\d+)\s*RPM', val, re.IGNORECASE)
+        if rpm_vals:
+            # Show average RPM across all fans
+            avg = sum(int(r) for r in rpm_vals) // len(rpm_vals)
+            count = len(rpm_vals)
+            return f"{count}x {avg} RPM"
+        # Apple Silicon: tool reports count but can't read speeds
+        num_m = re.search(r'Num fans:\s*(\d+)', val)
+        if num_m:
+            n = num_m.group(1)
+            state = _thermal_state()
+            return f"{n}x · {state}" if state else f"{n} fans"
+
     if shutil.which("istats"):
         val = _run(["istats", "fan", "--value-only"])
         if val:
             return f"{val} RPM"
+
     return None
 
 
