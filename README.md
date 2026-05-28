@@ -1,19 +1,33 @@
 # Dark Hour Dashboard
 
-A keyboard-first terminal dashboard built as a personal creative environment. Hosts an autonomous AI persona (NEON) that observes your daily data, generates content, and develops aesthetic taste through your feedback over time.
+This is a personal operating environment. Not a productivity app. Not a chatbot wrapper. A single place where an AI that knows your specific data — your habits, your money, your tasks, your creative work — reflects your life back to you and develops genuine taste through your feedback over time.
+
+You own everything. Your data stays on your machine. Your API key goes directly to Anthropic. Nobody profits from you using it. The AI you interact with has been shaped by your choices, not an average user's.
 
 Built on Python + Textual. Aesthetic: dark navy, amber gold, Vice City neon.
 
 ---
 
-## What It Does
+## What It Is
+
+Most interfaces are built to keep you engaged. This one is built to make you more aware. The difference is that it synthesizes — habits + money + tasks + notes simultaneously — and the AI that does that synthesis is yours to define, calibrate, and extend trust to over time.
+
+**NEON** is the AI persona at the center of it. It runs on Claude Sonnet 4.6, sees all your dashboard data at once, and remembers what you've approved and rejected across sessions. Every judgment you make trains it toward your specific aesthetic. Over months it becomes calibrated to how you actually think — not to some average user profile.
+
+The **Watcher** runs alongside NEON, logging everything it says and enforcing permission boundaries. You can see its flags. You can review what got approved. The oversight is visible, not hidden.
+
+The **trust level system** lets you decide how much autonomy NEON has — from silent observer to full autonomous generation. You extend trust deliberately, based on whether it's earned.
+
+---
+
+## Screens
 
 - **Habits** — daily tracking with streaks, 30-day trend analysis, quick-mark shortcuts
 - **Tasks** — daily reset task list with completion tracking
 - **Notes** — tagged note capture with inline `#tag` highlighting
 - **Portfolio** — stock positions with weight, P&L, tier, and goal alignment
 - **Music** — song idea capture with vibe metadata
-- **NEON** — AI persona (Claude Sonnet 4.6) that observes your dashboard, chats, generates content, and remembers your taste across sessions
+- **Bots** — NEON: chat, observe, generate, review, calibrate trust
 - **Security** — macOS security check panel with auto-scan and maintenance actions
 - **Vitals** — live CPU, RAM, battery, disk, temp in the status bar
 
@@ -72,7 +86,7 @@ Every screen shows its available keys at the bottom.
 
 ## NEON — The AI Persona
 
-NEON runs on Claude Sonnet 4.6. On first launch it generates a morning brief based on your dashboard state. From the Bots screen:
+NEON generates a morning brief on first launch based on your dashboard state. From the Bots screen:
 
 | Key | Action |
 |-----|--------|
@@ -81,29 +95,35 @@ NEON runs on Claude Sonnet 4.6. On first launch it generates a morning brief bas
 | `[u]` | UX review of the dashboard |
 | `[y]` | Approve output (saves to notes) |
 | `[s]` | Save last chat reply to notes |
-| `[p]` | Edit NEON's persona |
+| `[p]` | Edit NEON's persona — start here |
 | `[+/-]` | Adjust trust level (double-press to confirm) |
 
-Prefix any chat message with `?` to run in sandbox mode — no memory written, no watcher logging.
+**Start with `[p]`.** NEON's identity — name, philosophy, constraint, traits — is what makes it yours rather than a generic assistant. Define it before you start generating.
+
+Prefix any chat message with `?` to run in sandbox mode — no memory written, no watcher logging. Good for testing or sensitive questions.
 
 ### Trust Levels
 
-| Level | Name | Capabilities |
+Trust is extended deliberately. NEON earns it through output you approve.
+
+| Level | Name | What changes |
 |-------|------|-------------|
-| 0 | Observer | No output |
-| 1 | Correspondent | Observations, commentary |
-| 2 | Advisor | Music specs, art |
-| 3 | Executor | Full generation + chat |
-| 4 | Autonomous | Unrestricted generation |
-| 5 | Collaborator | All capabilities |
+| 0 | Observer | Silent. Watcher still runs. |
+| 1 | Correspondent | Observations and commentary |
+| 2 | Advisor | Adds music specs and art |
+| 3 | Executor | Full generation and chat |
+| 4 | Autonomous | Bolder, more directive tone. Fewer qualifiers. |
+| 5 | Collaborator | Full autonomy, peer critique |
+
+The capability strings at each level are injected into every API call — NEON reads them and calibrates its behavior accordingly. Raising trust changes how NEON presents itself, not just what it's allowed to do.
 
 ---
 
 ## Customizing for Yourself
 
-**Your name:** Set during first run, stored in `data/` (gitignored).
+**NEON's identity:** Edit via `[p]` on the Bots screen. Name, philosophy, constraint, traits. This is the most important customization — it determines the voice you'll be talking to.
 
-**NEON's identity:** Edit via `[p]` on the Bots screen — name, philosophy, constraint, traits. Or edit `data/bot_config.json` directly.
+**Your name:** Set during first run, stored in `data/` (gitignored).
 
 **Habits list:** Edit via `[a]` / `[r]` on the Habits screen.
 
@@ -115,7 +135,7 @@ Prefix any chat message with `?` to run in sandbox mode — no memory written, n
 
 ## API Cost
 
-NEON runs on Claude Sonnet 4.6. You pay Anthropic directly — there is no subscription or middleman. Add credit at [console.anthropic.com](https://console.anthropic.com).
+You pay Anthropic directly — no subscription, no middleman. The cost is yours and visible. Add credit at [console.anthropic.com](https://console.anthropic.com).
 
 **What each interaction costs** (approximate):
 
@@ -136,7 +156,7 @@ NEON runs on Claude Sonnet 4.6. You pay Anthropic directly — there is no subsc
 
 The app enforces a **daily call limit** (default: 75) visible in the status bar as `CALLS: X/75`. It hard-stops at that number and resets at midnight. You can lower it in `data/bot_config.json` under `"daily_call_limit"`.
 
-$5–$20 in API credit is enough for most people to run this for several months of regular daily use.
+$5–$20 in API credit is enough for most people to run this for several months of regular daily use. The software is free. The model access costs a few dollars.
 
 ---
 
@@ -172,4 +192,4 @@ data/bot_config.json    — NEON's persona definition
 
 ---
 
-*Built as a daily operating environment. Fork it, make it yours.*
+*Your data. Your AI. Your rules. Fork it, make it yours.*
