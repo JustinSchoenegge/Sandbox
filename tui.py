@@ -119,18 +119,35 @@ class DashboardHeader(Static):
         self._user_name = name
         self._is_admin = is_admin
         self._quote = get_quote()
+        self._is_live = False
 
     def on_mount(self) -> None:
         self._clock = ""
         self._date = ""
         self._tick()
         self.set_interval(1, self._tick)
+        self._check_live()
+        self.set_interval(5, self._check_live)
 
     def _tick(self) -> None:
         now = datetime.now()
         self._clock = now.strftime("%I:%M %p")
         self._date = now.strftime("%a %b %d")
         self.refresh()
+
+    @work(exclusive=False)
+    async def _check_live(self) -> None:
+        import asyncio
+        try:
+            r = await asyncio.to_thread(
+                lambda: subprocess.run(["pgrep", "-ix", "obs"], capture_output=True, timeout=1)
+            )
+            live = r.returncode == 0
+            if live != self._is_live:
+                self._is_live = live
+                self.refresh()
+        except Exception:
+            pass
 
     def render(self) -> RenderableType:
         t = Text(justify="center")
@@ -139,6 +156,8 @@ class DashboardHeader(Static):
         t.append(f"{get_greeting()}, {self._user_name}", style="bold #e8a020")
         if self._is_admin:
             t.append("  [ADMIN]", style="bold #ff2244")
+        if self._is_live:
+            t.append("  ● LIVE", style="bold #c03040")
         t.append(f"  ·  {self._date}  {self._clock}\n", style="dim #5f87af")
         t.append(f'"{self._quote}"', style="italic dim #5f87af")
         return t
