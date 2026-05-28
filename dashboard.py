@@ -1,14 +1,6 @@
 import random
 from datetime import datetime
 
-from rich.console import Console
-from rich.panel import Panel
-from rich.text import Text
-from rich.rule import Rule
-from rich import box
-
-console = Console()
-
 QUOTES = [
     "The secret of getting ahead is getting started. — Mark Twain",
     "Small daily improvements lead to stunning results. — Robin Sharma",
@@ -37,17 +29,3 @@ def get_quote():
     quote = random.choice(QUOTES)
     random.seed()
     return quote
-
-
-def show_dashboard(name="User"):
-    console.clear()
-    now = datetime.now()
-    date_str = now.strftime("%a %b %d")
-    time_str = now.strftime("%I:%M %p")
-
-    content = Text()
-    content.append(f"{get_greeting()}, {name}", style="bold cyan")
-    content.append(f"   {date_str}  {time_str}\n", style="dim white")
-    content.append(f'"{get_quote()}"', style="italic dim white")
-
-    console.print(Panel(content, title="[bold cyan]DASHBOARD[/bold cyan]", box=box.HEAVY, style="cyan", padding=(0, 1)))

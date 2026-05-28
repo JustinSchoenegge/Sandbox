@@ -34,8 +34,8 @@ DEFAULTS = {
     "is_admin": False,
 }
 
-# The JSON passphrase: this exact name grants admin access.
-_ADMIN_PASSPHRASE = "Jon Snow"
+# Set DARK_HOUR_ADMIN=<your name> in .env to grant admin access.
+_ADMIN_PASSPHRASE = os.environ.get("DARK_HOUR_ADMIN", "")
 
 
 def _check_admin(config: dict) -> bool:

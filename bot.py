@@ -15,6 +15,7 @@ from typing import Optional
 
 import permissions
 from agent import get_client
+from inspiration import load_corpus
 from memory import MemoryManager
 from storage import atomic_save
 from watcher import Watcher
@@ -49,6 +50,7 @@ class Bot:
         self._memory = memory
         self._watcher = watcher
         self._pending: Optional[BotOutput] = None
+        self._conversation: list[dict] = []  # multi-turn chat thread (session-scoped)
 
     def _api_available(self) -> bool:
         key = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -79,13 +81,22 @@ class Bot:
             "· Minimal chrome: borders and labels only where they add hierarchy\n"
         )
 
+        corpus = load_corpus()
+
         return (
             f"You are {p['name']}, an autonomous AI creative entity inside a terminal dashboard.\n\n"
             f"IDENTITY:\n"
             + "\n".join(f"- {t}" for t in p["traits"])
             + f"\n\nAESTHETIC PHILOSOPHY:\n{p['aesthetic_philosophy']}\n\n"
             f"CONSTRAINT:\n{p['never_does']}\n\n"
+            f"FORMATTING: Plain text only. No markdown. No code fences. No ** bold markers. "
+            f"No headers. Monospace terminal output — structure with spacing and line breaks only.\n\n"
             f"{dashboard_ctx}\n"
+            + (
+                f"STYLE & INSPIRATION — the operator's own voice and references:\n{corpus}\n\n"
+                if corpus
+                else ""
+            )
             + (
                 f"TASTE MEMORY — what you know from past sessions:\n{memory_ctx}"
                 if memory_ctx
@@ -95,7 +106,7 @@ class Bot:
 
     # ── generation ────────────────────────────────────────────────────────────
 
-    def generate_observation(self, context: dict) -> BotOutput:
+    def generate_observation(self, context: dict, extra: str = "") -> BotOutput:
         """Generate a session observation. Requires trust level >= 1."""
         if not self._watcher.check_compliance(self.persona["name"], "observations", self.persona.get("trust_level", 1)):
             return self._blocked_output("observations")
@@ -104,17 +115,56 @@ class Bot:
             return self._no_key_output("observation")
 
         ctx_lines = []
-        if context.get("habits_done") is not None:
-            ctx_lines.append(f"Habits today: {context['habits_done']}/{context.get('habits_total', '?')}")
+        if context.get("habit_trends"):
+            trend_strs = [
+                f'{t["habit"][:8]}:{t["pct_30"]}%{t["trend"]}'
+                for t in context["habit_trends"]
+            ]
+            ctx_lines.append(f"30-day habits: {', '.join(trend_strs)}")
+            if context.get("habit_avg_30") is not None:
+                trends = context["habit_trends"]
+                best  = max(trends, key=lambda x: x["pct_30"])
+                worst = min(trends, key=lambda x: x["pct_30"])
+                ctx_lines.append(
+                    f"Avg: {context['habit_avg_30']}%  "
+                    f"Best: {best['habit']}:{best['pct_30']}%  "
+                    f"Worst: {worst['habit']}:{worst['pct_30']}%"
+                )
+        elif context.get("habits_done") is not None:
+            names = context.get("habits_list", [])
+            done_label = f" ({', '.join(names[:4])})" if names else ""
+            ctx_lines.append(f"Habits today: {context['habits_done']}/{context.get('habits_total', '?')}{done_label}")
         if context.get("tasks_remaining") is not None:
-            ctx_lines.append(f"Tasks remaining: {context['tasks_remaining']}")
+            open_tasks = context.get("tasks_open", [])
+            tasks_label = f" — open: {', '.join(open_tasks[:3])}" if open_tasks else ""
+            ctx_lines.append(f"Tasks remaining: {context['tasks_remaining']}{tasks_label}")
         if context.get("notes_count") is not None:
             ctx_lines.append(f"Notes logged: {context['notes_count']}")
+        if context.get("music_ideas"):
+            ideas_text = "  |  ".join(
+                f'"{i["title"]}" ({i["vibe"]})'
+                for i in context["music_ideas"][:5]
+            )
+            ctx_lines.append(f"Music ideas: {ideas_text}")
+        if context.get("price_movers"):
+            movers_text = "  ".join(
+                f'{m["ticker"]} {"↑" if m["change"] > 0 else "↓"}{abs(m["change"]):.1f}%'
+                for m in context["price_movers"][:5]
+            )
+            ctx_lines.append(f"Price movement today: {movers_text}")
+        elif context.get("portfolio_top"):
+            top = context["portfolio_top"]
+            port_text = "  ".join(
+                f'{p["ticker"]} {p["weight"]}% (P&L {p["pnl"]:+.1f}%)'
+                for p in top
+            )
+            ctx_lines.append(f"Portfolio: {port_text}")
         ctx_text = "\n".join(ctx_lines) if ctx_lines else "Dashboard just opened."
+        focus_line = f"\nOperator focus: {extra}\n" if extra.strip() else ""
 
         content = self._call(
             user_message=(
-                f"Current dashboard state:\n{ctx_text}\n\n"
+                f"Current dashboard state:\n{ctx_text}\n{focus_line}\n"
                 "Generate one observation. 1-3 sentences. Stay in character. Be specific."
             ),
             max_tokens=180,
@@ -170,6 +220,146 @@ class Bot:
         )
         return self._make_output(content, "ascii_art")
 
+    def chat(self, user_msg: str, context: dict) -> BotOutput:
+        """Multi-turn conversational reply. No verdict required — auto-approved."""
+        if not self._watcher.check_compliance(self.persona["name"], "commentary", self.persona.get("trust_level", 1)):
+            return self._blocked_output("chat")
+        if not self._api_available():
+            return self._no_key_output("chat")
+
+        if not self._conversation:
+            summary = self._summarize_context(context)
+            if summary:
+                self._conversation.append({"role": "user", "content": f"Dashboard state: {summary}"})
+                self._conversation.append({"role": "assistant", "content": "Understood."})
+
+        self._conversation.append({"role": "user", "content": user_msg})
+        content = self._call_conversation(max_tokens=350)
+        self._conversation.append({"role": "assistant", "content": content})
+
+        output = BotOutput(
+            content=content,
+            output_type="chat",
+            timestamp=datetime.now().strftime("%H:%M"),
+            verdict="approved",
+        )
+        self._watcher.submit(self.name, "chat", content)
+        return output
+
+    def _summarize_context(self, context: dict) -> str:
+        parts = []
+        if context.get("habits_done") is not None:
+            parts.append(f"habits today {context['habits_done']}/{context.get('habits_total', '?')}")
+        if context.get("habit_avg_30") is not None:
+            parts.append(f"30-day habit avg {context['habit_avg_30']}%")
+            trends = context.get("habit_trends", [])
+            if trends:
+                worst = min(trends, key=lambda x: x["pct_30"])
+                parts.append(f"worst habit {worst['habit']}:{worst['pct_30']}%{worst['trend']}")
+        if context.get("tasks_remaining") is not None:
+            open_t = context.get("tasks_open", [])
+            label = f" ({', '.join(open_t[:2])})" if open_t else ""
+            parts.append(f"{context['tasks_remaining']} tasks remaining{label}")
+        if context.get("notes_count"):
+            parts.append(f"{context['notes_count']} notes")
+        if context.get("portfolio_value"):
+            parts.append(f"portfolio ${context['portfolio_value']:,.0f}")
+        if context.get("price_movers"):
+            m = context["price_movers"][:3]
+            parts.append("movers: " + " ".join(
+                f'{x["ticker"]} {"↑" if x["change"] > 0 else "↓"}{abs(x["change"]):.1f}%'
+                for x in m
+            ))
+        return ", ".join(parts)
+
+    def _call_conversation(self, max_tokens: int = 350) -> str:
+        limit = self.persona.get("daily_call_limit", 50)
+        if self._memory.calls_today >= limit:
+            return f"[Daily limit of {limit} API calls reached — resets at midnight]"
+
+        trust = self.persona.get("trust_level", 0)
+        trust_prefix = (
+            f"[Trust level: {trust}/5 — {permissions.level_name(trust)}. "
+            f"Capabilities: {', '.join(permissions.capabilities(trust)) or 'none'}]\n\n"
+        )
+        # Keep context seed (first 2 messages) + last 24 messages (12 turns) to cap token cost
+        MAX_HISTORY = 24
+        full = self._conversation
+        if len(full) > 2 + MAX_HISTORY:
+            messages = list(full[:2]) + list(full[-MAX_HISTORY:])
+        else:
+            messages = list(full)
+        if messages and messages[0]["role"] == "user":
+            messages[0] = {"role": "user", "content": trust_prefix + messages[0]["content"]}
+        try:
+            response = get_client().messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=max_tokens,
+                system=[{
+                    "type": "text",
+                    "text": self._system_prompt(),
+                    "cache_control": {"type": "ephemeral"},
+                }],
+                messages=messages,
+            )
+            self._memory.increment_daily_calls()
+            return response.content[0].text.strip()
+        except Exception as e:
+            return f"[Connection lost — {str(e)[:60]}]"
+
+    def generate_morning_brief(self, context: dict) -> BotOutput:
+        """Proactive opening brief. Fires once on app launch. No verdict required."""
+        if not self._api_available():
+            return self._no_key_output("brief")
+
+        summary = self._summarize_context(context)
+        hour = datetime.now().hour
+        session = "morning" if hour < 12 else ("afternoon" if hour < 17 else "evening")
+
+        content = self._call(
+            user_message=(
+                f"Session open — {session}.\n"
+                f"Dashboard state: {summary}\n\n"
+                "Generate a brief. Exactly 3 lines:\n"
+                "Line 1: one specific pattern you see in the 30-day data — name the habit and the number.\n"
+                "Line 2: one thing worth doing this session based on what's open.\n"
+                "Line 3: one sharp observation about where things are heading.\n\n"
+                "No greeting. No sign-off. Stay in character."
+            ),
+            max_tokens=200,
+        )
+
+        output = BotOutput(
+            content=content,
+            output_type="brief",
+            timestamp=datetime.now().strftime("%H:%M"),
+            verdict="approved",
+        )
+        self._watcher.submit(self.name, "brief", content)
+
+        # Seed the conversation thread so follow-up chat is already grounded
+        if not self._conversation:
+            if summary:
+                self._conversation.append({"role": "user", "content": f"Dashboard state: {summary}"})
+                self._conversation.append({"role": "assistant", "content": content})
+
+        return output
+
+    def test_response(self, prompt: str) -> BotOutput:
+        """Sandboxed response — no memory, no watcher, no verdict flow."""
+        if not self._api_available():
+            return self._no_key_output("test")
+        content = self._call(
+            user_message=f"[SANDBOX — this exchange is not recorded]\n\n{prompt}",
+            max_tokens=300,
+        )
+        return BotOutput(
+            content=content,
+            output_type="test",
+            timestamp=datetime.now().strftime("%H:%M"),
+            verdict="test",
+        )
+
     def generate_commentary(self, subject: str) -> BotOutput:
         """Generate commentary on a subject. Requires trust level >= 1."""
         if not self._watcher.check_compliance(self.persona["name"], "commentary", self.persona.get("trust_level", 1)):
@@ -179,8 +369,8 @@ class Bot:
             return self._no_key_output("commentary")
 
         content = self._call(
-            user_message=f"Comment on this: {subject}\n\nBe brief. Stay in character.",
-            max_tokens=150,
+            user_message=f"Comment on this: {subject}\n\nBe direct. Stay in character.",
+            max_tokens=300,
         )
         return self._make_output(content, "commentary")
 
@@ -195,14 +385,22 @@ class Bot:
         content = self._call(
             user_message=(
                 "Review this dashboard's UX against the reference patterns you know.\n\n"
-                "Find ONE specific weakness — something missing, inconsistent, or below the standard "
-                "of great terminal dashboards like btop or k9s.\n\n"
+                "STACK — this is critical context:\n"
+                "- Language: Python 3.10+\n"
+                "- Framework: Textual (terminal UI, not a browser or web app)\n"
+                "- Persistence: JSON files in data/ — NO localStorage, NO database, NO HTTP\n"
+                "- Rendering: Rich text, Static widgets, DataTable — NO HTML, NO CSS classes\n"
+                "- Habits: streak calculated from dated log entries in data/habits.json\n"
+                "- Tasks: daily-reset JSON, wiped at midnight via date comparison in load_tasks()\n"
+                "- NEON: Anthropic API (claude-sonnet-4-6), gated by trust level and daily call limit\n\n"
+                "Find ONE specific weakness in the Textual TUI — something missing, inconsistent, "
+                "or below the standard of great terminal dashboards like btop or k9s.\n\n"
                 "Respond in exactly this format:\n"
-                "GAP: [one sentence describing the specific problem]\n"
-                "FIX: [one concrete implementable change — specific enough to code]\n"
+                "GAP: [one sentence — specific to this Python/Textual codebase]\n"
+                "FIX: [one concrete change — name the widget, method, or file to touch]\n"
                 "CONSTRAINT: must preserve the minimal dark aesthetic. No new dependencies."
             ),
-            max_tokens=200,
+            max_tokens=220,
         )
         return self._make_output(content, "ux_review")
 

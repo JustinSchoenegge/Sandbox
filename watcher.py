@@ -69,7 +69,7 @@ class Watcher:
 
     def __init__(self) -> None:
         self._health = SystemHealth()
-        self._flags: list[WatcherFlag] = []
+        self._flags: deque[WatcherFlag] = deque(maxlen=100)
         self._queue: deque[PresentationItem] = deque(maxlen=30)
         self._last_check: str = "never"
         self._flag_callbacks: list[Callable] = []

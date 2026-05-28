@@ -23,8 +23,8 @@ Screen {
 /* ── Dashboard: header ───────────────────────────────────── */
 
 DashboardHeader {
-    height: 7;
-    border: double #1e3a5f;
+    height: 4;
+    border: double #2a4a7f;
     content-align: center middle;
     padding: 0 2;
 }
@@ -36,9 +36,9 @@ DashboardHeader {
 }
 
 NavSidebar {
-    width: 22;
+    width: 18;
     border: double #1e3a5f;
-    padding: 1 2;
+    padding: 1 1;
     layout: vertical;
 }
 
@@ -55,6 +55,10 @@ NavSidebar {
     width: 1fr;
 }
 
+#left-panel {
+    width: 2fr;
+}
+
 #upper {
     height: 1fr;
 }
@@ -67,46 +71,44 @@ NavSidebar {
 
 HabitsWidget {
     width: 1fr;
-    border: double #1e3a5f;
+    border: double #00c040;
     padding: 0 1;
     content-align: center middle;
 }
 
 TasksWidget {
     width: 1fr;
-    border: double #1e3a5f;
+    border: double #4a9eff;
     padding: 0 1;
     content-align: center middle;
 }
 
 NotesWidget {
     width: 1fr;
-    border: double #1e3a5f;
+    border: double #9b59b6;
     padding: 0 1;
     content-align: center middle;
 }
 
 PortfolioWidget {
     width: 1fr;
-    border: double #1e3a5f;
-    padding: 0 1;
-    content-align: center middle;
+    border: double #e8a020;
+    padding: 1 2;
+    content-align: left top;
 }
 
 /* ── Dashboard: footer ───────────────────────────────────── */
 
-#footer {
-    height: 3;
-    border: round #1e3a5f;
-    color: #5f87af;
-    content-align: center middle;
-    text-style: italic;
-}
-
 #footer-controls {
     height: 1;
+    padding: 0 1;
+}
+
+#vitals-bar {
+    height: 1;
     content-align: center middle;
-    color: #2a3a5a;
+    background: #040410;
+    color: #5f87af;
 }
 
 /* ── Sub-screens: shared ─────────────────────────────────── */
@@ -125,11 +127,15 @@ PortfolioWidget {
     color: #f0f0ff;
 }
 
+#port-goals {
+    height: 2;
+    padding: 0 1;
+    color: #4a9eff;
+}
+
 .sub-hint {
     height: 1;
     content-align: center middle;
-    color: #2a3a5a;
-    text-style: dim;
 }
 
 /* ── DataTable ───────────────────────────────────────────── */
@@ -199,8 +205,8 @@ Input:focus {
 /* ── Bot HUD card ─────────────────────────────────────────── */
 
 #bot-widget {
-    height: 5;
-    border: double #1a3a5a;
+    width: 1fr;
+    border: double #008b8b;
     padding: 0 1;
     content-align: center middle;
     color: #4a9eff;
@@ -267,4 +273,63 @@ Input:focus {
     content-align: center middle;
     color: #2a3a5a;
     text-style: dim;
+}
+
+/* ── Bots: ask input ─────────────────────────────────────── */
+
+#bots-input {
+    border: double #4a9eff;
+    background: #0a0a1e;
+    color: #f0f0ff;
+}
+
+/* ── Persona editor screen ───────────────────────────────── */
+
+#persona-title {
+    border: double #e8a020;
+}
+
+#persona-body {
+    height: 1fr;
+    border: double #1e3a5f;
+    background: #060615;
+    padding: 1 2;
+}
+
+.persona-label {
+    height: 1;
+    color: #e8a020;
+    text-style: bold;
+    margin-top: 1;
+}
+
+#traits-list {
+    color: #f0f0ff;
+    margin-bottom: 1;
+}
+
+#persona-input {
+    border: double #00c040;
+    background: #0a0a1e;
+    color: #f0f0ff;
+}
+
+#persona-hint {
+    height: 1;
+    content-align: center middle;
+    color: #5f87af;
+}
+
+/* ── Security screen ──────────────────────────────────────── */
+
+#sec-ports {
+    height: 2;
+    padding: 0 1;
+    color: #5f87af;
+}
+
+#sec-maint {
+    height: 2;
+    padding: 0 1;
+    color: #5f87af;
 }

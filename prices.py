@@ -85,3 +85,14 @@ def last_updated_label():
     if _cache_time:
         return f"live  •  Updated {_cache_time.strftime('%I:%M %p')}"
     return "approximate"
+
+
+def cached_changes() -> dict:
+    """Day-change % for all tickers in disk cache. No network calls."""
+    _load_disk_cache()
+    result = {}
+    for ticker in list(_session_cache.keys()):
+        chg = day_change_pct(ticker)
+        if chg is not None:
+            result[ticker] = round(chg, 2)
+    return result

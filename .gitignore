@@ -4,4 +4,8 @@ config.json
 .env
 __pycache__/
 *.pyc
-assets/vicecity.m4a
+*.m4a
+*.m4ax
+.DS_Store
+.secrets/
+.claude/

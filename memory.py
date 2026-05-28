@@ -80,7 +80,9 @@ class MemoryManager:
         if rejected:
             parts.append(f"{len(rejected)} rejected")
         if approved:
-            parts.append(f"last approved preview: \"{approved[-1]['preview']}\"")
+            parts.append(f"last approved: \"{approved[-1]['preview']}\"")
+        if rejected:
+            parts.append(f"last rejected: \"{rejected[-1]['preview']}\"")
 
         self._summaries.append({
             "date": self._session_start,
