@@ -287,6 +287,10 @@ class Bot:
             return f"[Daily limit of {limit} API calls reached — resets at midnight]"
 
         trust = self.persona.get("trust_level", 0)
+        # This prefix is read by the model and shifts NEON's tone and initiative.
+        # At L4 (AUTONOMOUS), "autonomous_create" appears here — NEON becomes bolder,
+        # makes stronger assertions, defers less. No code gate changes; the behavioral
+        # shift is entirely through this self-description. See permissions.py for details.
         trust_prefix = (
             f"[Trust level: {trust}/5 — {permissions.level_name(trust)}. "
             f"Capabilities: {', '.join(permissions.capabilities(trust)) or 'none'}]\n\n"
@@ -461,6 +465,8 @@ class Bot:
             return f"[Daily limit of {limit} API calls reached — resets at midnight]"
 
         trust = self.persona.get("trust_level", 0)
+        # Same behavioral shift as _call_conversation — at L4+ NEON's tone becomes
+        # more directive. See the comment in _call_conversation and permissions.py.
         trust_line = (
             f"[Trust level: {trust}/5 — {permissions.level_name(trust)}. "
             f"Capabilities: {', '.join(permissions.capabilities(trust)) or 'none'}]\n\n"
