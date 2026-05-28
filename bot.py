@@ -51,6 +51,7 @@ class Bot:
         self._watcher = watcher
         self._pending: Optional[BotOutput] = None
         self._conversation: list[dict] = []  # multi-turn chat thread (session-scoped)
+        self._corpus_cache: Optional[str] = None
 
     def _api_available(self) -> bool:
         key = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -81,7 +82,9 @@ class Bot:
             "· Minimal chrome: borders and labels only where they add hierarchy\n"
         )
 
-        corpus = load_corpus()
+        if self._corpus_cache is None:
+            self._corpus_cache = load_corpus()
+        corpus = self._corpus_cache
 
         return (
             f"You are {p['name']}, an autonomous AI creative entity inside a terminal dashboard.\n\n"
@@ -89,6 +92,9 @@ class Bot:
             + "\n".join(f"- {t}" for t in p["traits"])
             + f"\n\nAESTHETIC PHILOSOPHY:\n{p['aesthetic_philosophy']}\n\n"
             f"CONSTRAINT:\n{p['never_does']}\n\n"
+            f"CAPABILITIES: You are purely generative — text output only. You have no tools, "
+            f"no file-write access, and no ability to read live files or modify any data. "
+            f"When asked to perform an action you cannot do, say so plainly without inventing capabilities.\n\n"
             f"FORMATTING: Plain text only. No markdown. No code fences. No ** bold markers. "
             f"No headers. Monospace terminal output — structure with spacing and line breaks only.\n\n"
             f"{dashboard_ctx}\n"
@@ -103,6 +109,9 @@ class Bot:
                 else "TASTE MEMORY — no prior sessions. You are observing for the first time."
             )
         )
+
+    def invalidate_corpus_cache(self) -> None:
+        self._corpus_cache = None
 
     # ── generation ────────────────────────────────────────────────────────────
 

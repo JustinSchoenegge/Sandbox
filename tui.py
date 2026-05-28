@@ -601,6 +601,11 @@ class HabitsScreen(Screen):
         table.add_columns("#", "Habit", "Today", "Streak")
         try:
             data = load_habits()
+            if not data["habits"]:
+                self.query_one("#habits-msg", Static).update(
+                    Text("No habits yet.  [a] to add one.", style="dim #5f87af")
+                )
+                return
             shortcut = 1
             for i, habit in enumerate(data["habits"]):
                 dates = data["logs"].get(habit, [])
@@ -969,6 +974,11 @@ class MusicScreen(Screen):
         table.add_columns("#", "Title", "Vibe", "Written")
         try:
             ideas = load_ideas()
+            if not ideas:
+                self.query_one("#music-msg", Static).update(
+                    Text("No ideas yet.  [a] to add one.", style="dim #5f87af")
+                )
+                return
             for i, idea in enumerate(ideas, 1):
                 written = Text("✓", style="bold #00c040") if idea.get("song") else Text("—", style="dim")
                 table.add_row(str(i), idea["title"], idea.get("vibe", ""), written)
@@ -1437,6 +1447,7 @@ def _build_neon_context() -> dict:
             ctx["portfolio_top"] = [
                 {
                     "ticker": r["ticker"],
+                    "shares": r.get("shares", 0),
                     "weight": round(r["weight"] * 100, 1),
                     "pnl": round((r["current_price"] - r["avg_cost"]) / r["avg_cost"] * 100, 1),
                 }
@@ -1501,7 +1512,7 @@ class BotsScreen(Screen):
         yield Static(
             "[dim #2a3a5a]"
             "[c] chat  [o] observe  [u] ux  [m] music  [a] art  "
-            "[y] approve  [n] reject  [s] save to notes  "
+            "[y] approve output  [n] reject  [s] save chat  "
             "[e] export notes  [p] persona  [+/-] trust  [q] back"
             "[/dim #2a3a5a]",
             id="bots-keyhint",
@@ -1519,18 +1530,24 @@ class BotsScreen(Screen):
         self._brief_loaded: bool = getattr(self.app, "_brief_displayed_in_bots", False)
         self._trust_pending: str | None = None
         self._insp_count: int = inspiration_count()
+        self._watcher_timer = None
         self._refresh_title()
         self._refresh_pending_display()
         self._refresh_watcher()
         self._refresh_history()
-        self.set_interval(5, self._refresh_watcher)
 
     def on_key(self, event: events.Key) -> None:
         if self._trust_pending and event.key not in ("plus", "minus"):
             self._trust_pending = None
             self._refresh_pending_display()
 
+    def on_hide(self) -> None:
+        if self._watcher_timer is not None:
+            self._watcher_timer.stop()
+            self._watcher_timer = None
+
     def on_show(self) -> None:
+        self._watcher_timer = self.set_interval(5, self._refresh_watcher)
         self._refresh_title()
         self._insp_count = inspiration_count()
         self._refresh_watcher()
@@ -1918,6 +1935,10 @@ class BotsScreen(Screen):
 
     def action_export_notes(self) -> None:
         result = export_notes()
+        bot: Bot | None = getattr(self.app, "_bot", None)
+        if bot:
+            bot.invalidate_corpus_cache()
+        self._insp_count = inspiration_count()
         try:
             self.query_one("#pending-hint", Static).update(
                 Text(f"Exported → {result}", style="dim #00c040")
@@ -2131,11 +2152,17 @@ class SecurityScreen(Screen):
     def on_mount(self) -> None:
         self.query_one("#sec-table", DataTable).can_focus = False
         self._pending_action: str | None = None
+        self._scan_timer = None
         self._refresh_hint()
         self._run_scan()
-        self.set_interval(30, self._run_scan)
+
+    def on_hide(self) -> None:
+        if self._scan_timer is not None:
+            self._scan_timer.stop()
+            self._scan_timer = None
 
     def on_show(self) -> None:
+        self._scan_timer = self.set_interval(30, self._run_scan)
         self._run_scan()
 
     def _refresh_hint(self) -> None:
