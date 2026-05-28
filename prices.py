@@ -87,6 +87,12 @@ def last_updated_label():
     return "approximate"
 
 
+def cached_price(ticker: str) -> "float | None":
+    """Return cached current price for ticker — no network calls, no blocking."""
+    _load_disk_cache()
+    return _session_cache.get(ticker)
+
+
 def cached_changes() -> dict:
     """Day-change % for all tickers in disk cache. No network calls."""
     _load_disk_cache()

@@ -55,9 +55,10 @@ def file_count() -> int:
 
 
 def export_notes(notes_path: str = "data/notes.json") -> str:
-    """
-    Export notes.json to data/inspiration/notes_export.md.
-    Skips junk entries (< 4 chars). Returns path written.
+    """Export the most recent notes to data/inspiration/notes_export.md.
+
+    Exports newest-first so the corpus reader's 2,000-char truncation always
+    captures the most recent voice rather than the oldest entries.
     """
     dir_path = Path(INSPIRATION_DIR)
     dir_path.mkdir(parents=True, exist_ok=True)
@@ -71,20 +72,24 @@ def export_notes(notes_path: str = "data/notes.json") -> str:
     clean = [
         n for n in notes
         if len(n.get("text", "").strip()) >= 4
+        and "#neon" not in n.get("tags", [])  # skip auto-saved NEON outputs
     ]
 
     if not clean:
         return "[no notes to export]"
 
+    # Most recent first so corpus truncation keeps freshest voice
+    recent = list(reversed(clean))[:60]
+
     lines = [
         f"# Notes Export",
-        f"_Generated {datetime.now().strftime('%Y-%m-%d %H:%M')} — {len(clean)} entries_\n",
+        f"_Generated {datetime.now().strftime('%Y-%m-%d %H:%M')} — {len(recent)} of {len(clean)} entries (newest first)_\n",
     ]
 
-    for n in clean:
+    for n in recent:
         ts   = n.get("timestamp", "")
         text = n.get("text", "").strip()
-        tags = n.get("tags", [])
+        tags = [t for t in n.get("tags", []) if not t.startswith("#neon")]
         tag_str = "  " + "  ".join(tags) if tags else ""
         lines.append(f"### {ts}{tag_str}")
         lines.append(f"{text}\n")

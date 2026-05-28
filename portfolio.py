@@ -3,6 +3,7 @@ import os
 
 from storage import atomic_save
 from stocks import STOCKS, SECTOR_GOAL_MAP
+from prices import cached_price
 
 PORTFOLIO_FILE = "data/portfolio.json"
 
@@ -37,7 +38,9 @@ def get_stock_price(ticker):
 def calculate_weights(holdings):
     rows = []
     for h in holdings:
-        price = get_stock_price(h["ticker"]) or h["avg_cost"]
+        ticker = h["ticker"]
+        # Priority: live cache → static list → avg_cost (never silently 0% P&L)
+        price = cached_price(ticker) or get_stock_price(ticker) or h["avg_cost"]
         value = price * h["shares"]
         rows.append({**h, "current_price": price, "value": value})
     total = sum(r["value"] for r in rows) or 1

@@ -27,7 +27,7 @@ from dashboard import get_greeting, get_quote
 from notify import notify
 from habits import load_habits, is_done_today, calculate_streak, mark_done, save_habits
 from tasks import load_tasks, save_tasks
-from notes import load_notes, save_notes
+from notes import load_notes, save_notes, get_notes_meta
 from music import load_ideas, save_ideas
 from portfolio import load_portfolio, calculate_weights, save_portfolio, check_alignment
 from stocks import STOCKS, TIER_STYLES
@@ -283,13 +283,13 @@ class NotesWidget(Static):
 
     def refresh_data(self) -> None:
         try:
-            notes = load_notes()
-            count = len(notes)
+            meta = get_notes_meta()
+            count = meta.get("count", 0)
+            last_text = meta.get("last_text", "")
             t = Text(justify="center")
             t.append(f"{count}\n", style="bold #e8a020")
             t.append(f"NOTE{'S' if count != 1 else ''}\n", style="dim #4a5568")
-            if notes:
-                last_text = notes[-1]["text"]
+            if last_text:
                 preview = (last_text[:28] + "…") if len(last_text) > 28 else last_text
                 t.append(preview, style="italic dim #5f87af")
             else:
@@ -668,6 +668,8 @@ class HabitsScreen(Screen):
             if 0 <= full_idx < len(habits):
                 habit = habits[full_idx]
                 success = mark_done(data, habit)
+                if success:
+                    invalidate_context_cache()
                 msg = self.query_one("#habits-msg", Static)
                 if success:
                     msg.update(Text(f"{habit} marked done!", style="bold #00c040"))
@@ -840,6 +842,7 @@ class TasksScreen(Screen):
                         task_name = tasks[idx]["name"]
                         tasks[idx]["done"] = True
                         save_tasks(tasks)
+                        invalidate_context_cache()
                         self.query_one("#tasks-msg", Static).update(
                             Text(f"{task_name} completed!", style="bold #00c040")
                         )
@@ -1430,7 +1433,23 @@ class GameScreen(Screen):
 # Shared context builder — used by BotsScreen and morning brief
 # ══════════════════════════════════════════════════════════════════════════════
 
+_ctx_cache: dict = {}
+_ctx_cache_time: "datetime | None" = None
+_CTX_CACHE_TTL = 30  # seconds — data doesn't change mid-conversation
+
+
+def invalidate_context_cache() -> None:
+    """Call after any data write so the next NEON call sees fresh state."""
+    global _ctx_cache_time
+    _ctx_cache_time = None
+
+
 def _build_neon_context() -> dict:
+    global _ctx_cache, _ctx_cache_time
+    now = datetime.now()
+    if _ctx_cache_time and (now - _ctx_cache_time).total_seconds() < _CTX_CACHE_TTL:
+        return _ctx_cache
+
     ctx: dict = {}
     try:
         data = load_habits()
@@ -1467,10 +1486,8 @@ def _build_neon_context() -> dict:
     except Exception:
         pass
     try:
-        notes = load_notes()
-        ctx["notes_count"] = len(notes)
-        if notes:
-            ctx["notes_recent"] = [n["text"][:60] for n in notes[-3:]]
+        meta = get_notes_meta()
+        ctx["notes_count"] = meta.get("count", 0)
     except Exception:
         pass
     try:
@@ -1510,6 +1527,9 @@ def _build_neon_context() -> dict:
             ]
     except Exception:
         pass
+
+    _ctx_cache = ctx
+    _ctx_cache_time = now
     return ctx
 
 
@@ -1914,6 +1934,7 @@ class BotsScreen(Screen):
                 "tags": ["#neon", f"#{output.output_type}"],
             })
             save_notes(notes)
+            invalidate_context_cache()
         self._refresh_pending_display()
         self._refresh_history()
         self._update_bot_widget()
@@ -1953,6 +1974,7 @@ class BotsScreen(Screen):
             "tags": ["#neon", "#chat"],
         })
         save_notes(notes)
+        invalidate_context_cache()
         try:
             self.query_one("#pending-hint", Static).update(
                 Text("✓ Saved to notes", style="bold #00c040")
