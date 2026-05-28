@@ -13,6 +13,7 @@ from rich.text import Text
 from rich.console import RenderableType
 
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.screen import Screen
 from textual.widgets import Static, DataTable, Input
 from textual.containers import Horizontal, Vertical, ScrollableContainer
@@ -487,7 +488,6 @@ class DashboardScreen(Screen):
         ("6", "push_screen_nav_5", "Music"),
         ("7", "push_screen_nav_6", "Bots"),
         ("8", "push_screen_nav_7", "Security"),
-        ("m", "app.toggle_mute", "Mute"),
         ("q", "app.action_quit_confirm", "Quit"),
     ]
 
@@ -1486,7 +1486,7 @@ class BotsScreen(Screen):
         ("c", "ask_mode", "Chat"),
         ("o", "generate_observation", "Observe"),
         ("u", "generate_ux", "UX Review"),
-        ("m", "generate_music", "Music"),
+        ("g", "generate_music", "Music"),
         ("a", "generate_art", "Art"),
         ("y", "approve", "Approve"),
         ("n", "reject", "Reject"),
@@ -1514,7 +1514,7 @@ class BotsScreen(Screen):
         yield Static("", id="watcher-bar")
         yield Static(
             "[dim #2a3a5a]"
-            "[[c]] chat  [[o]] observe  [[u]] ux  [[m]] music  [[a]] art  "
+            "[[c]] chat  [[o]] observe  [[u]] ux  [[g]] music  [[a]] art  "
             "[[t]] trait  [[x]] synthesis  [[v]] portfolio  "
             "[[y]] approve output  [[n]] reject  [[s]] save chat  "
             "[[e]] export notes  [[p]] persona  [+/-] trust  [[q]] back"
@@ -2328,6 +2328,7 @@ class SecurityScreen(Screen):
 
 class DarkHourApp(App):
     CSS_PATH = "tui.tcss"
+    BINDINGS = [Binding("m", "toggle_mute", "Mute", priority=True)]
 
     def on_mount(self) -> None:
         self._music_proc = None
