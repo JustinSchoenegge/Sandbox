@@ -580,11 +580,11 @@ class HabitsScreen(Screen):
         yield Static("", id="habits-msg", classes="sub-msg")
         yield Static(
             "[bold #e8a020][↑↓][/bold #e8a020][white] navigate  [/white]"
-            "[bold #e8a020][enter][/bold #e8a020][white] mark done  [/white]"
+            "[bold #e8a020][[enter]][/bold #e8a020][white] mark done  [/white]"
             "[bold #e8a020][1-9][/bold #e8a020][white] quick mark  [/white]"
-            "[bold #e8a020][a][/bold #e8a020][white] add  [/white]"
-            "[bold #e8a020][r][/bold #e8a020][white] remove  [/white]"
-            "[bold #e8a020][q][/bold #e8a020][white] back[/white]",
+            "[bold #e8a020][[a]][/bold #e8a020][white] add  [/white]"
+            "[bold #e8a020][[r]][/bold #e8a020][white] remove  [/white]"
+            "[bold #e8a020][[q]][/bold #e8a020][white] back[/white]",
             classes="sub-hint",
         )
 
@@ -743,8 +743,8 @@ class TasksScreen(Screen):
         yield Static("", id="tasks-msg", classes="sub-msg")
         yield Static(
             "[bold #e8a020][#][/bold #e8a020][white] complete  [/white]"
-            "[bold #e8a020][a][/bold #e8a020][white] add  [/white]"
-            "[bold #e8a020][q][/bold #e8a020][white] back[/white]",
+            "[bold #e8a020][[a]][/bold #e8a020][white] add  [/white]"
+            "[bold #e8a020][[q]][/bold #e8a020][white] back[/white]",
             classes="sub-hint",
         )
 
@@ -861,8 +861,8 @@ class NotesScreen(Screen):
         yield Input(placeholder="New note… (use #tag for tags)", id="note-input", classes="hidden")
         yield Static("", id="notes-msg", classes="sub-msg")
         yield Static(
-            "[bold #e8a020][a][/bold #e8a020][white] add note  [/white]"
-            "[bold #e8a020][q][/bold #e8a020][white] back[/white]",
+            "[bold #e8a020][[a]][/bold #e8a020][white] add note  [/white]"
+            "[bold #e8a020][[q]][/bold #e8a020][white] back[/white]",
             classes="sub-hint",
         )
 
@@ -954,8 +954,8 @@ class MusicScreen(Screen):
         yield Static("", id="music-msg", classes="sub-msg")
         yield Static(
             "[bold #e8a020][#][/bold #e8a020][white] view detail  [/white]"
-            "[bold #e8a020][a][/bold #e8a020][white] add  [/white]"
-            "[bold #e8a020][q][/bold #e8a020][white] back[/white]",
+            "[bold #e8a020][[a]][/bold #e8a020][white] add  [/white]"
+            "[bold #e8a020][[q]][/bold #e8a020][white] back[/white]",
             classes="sub-hint",
         )
 
@@ -1082,11 +1082,11 @@ class PortfolioScreen(Screen):
         yield Input(placeholder="", id="port-input", classes="hidden")
         yield Static("", id="port-msg", classes="sub-msg")
         yield Static(
-            "[bold #e8a020][a][/bold #e8a020][white] add  [/white]"
-            "[bold #e8a020][e][/bold #e8a020][white] edit  [/white]"
-            "[bold #e8a020][r][/bold #e8a020][white] remove  [/white]"
-            "[bold #e8a020][g][/bold #e8a020][white] goals  [/white]"
-            "[bold #e8a020][q][/bold #e8a020][white] back[/white]",
+            "[bold #e8a020][[a]][/bold #e8a020][white] add  [/white]"
+            "[bold #e8a020][[e]][/bold #e8a020][white] edit  [/white]"
+            "[bold #e8a020][[r]][/bold #e8a020][white] remove  [/white]"
+            "[bold #e8a020][[g]][/bold #e8a020][white] goals  [/white]"
+            "[bold #e8a020][[q]][/bold #e8a020][white] back[/white]",
             classes="sub-hint",
         )
 
@@ -1511,9 +1511,9 @@ class BotsScreen(Screen):
         yield Static("", id="watcher-bar")
         yield Static(
             "[dim #2a3a5a]"
-            "[c] chat  [o] observe  [u] ux  [m] music  [a] art  "
-            "[y] approve output  [n] reject  [s] save chat  "
-            "[e] export notes  [p] persona  [+/-] trust  [q] back"
+            "[[c]] chat  [[o]] observe  [[u]] ux  [[m]] music  [[a]] art  "
+            "[[y]] approve output  [[n]] reject  [[s]] save chat  "
+            "[[e]] export notes  [[p]] persona  [+/-] trust  [[q]] back"
             "[/dim #2a3a5a]",
             id="bots-keyhint",
         )
@@ -1980,10 +1980,10 @@ class PersonaScreen(Screen):
         yield Input(placeholder="", id="persona-input", classes="hidden")
         yield Static("", id="persona-hint")
         yield Static(
-            "[bold #e8a020][a][/bold #e8a020][white] add trait  [/white]"
-            "[bold #e8a020][d][/bold #e8a020][white] del trait  [/white]"
-            "[bold #e8a020][s][/bold #e8a020][white] save  [/white]"
-            "[bold #e8a020][q][/bold #e8a020][white] back[/white]",
+            "[bold #e8a020][[a]][/bold #e8a020][white] add trait  [/white]"
+            "[bold #e8a020][[d]][/bold #e8a020][white] del trait  [/white]"
+            "[bold #e8a020][[s]][/bold #e8a020][white] save  [/white]"
+            "[bold #e8a020][[q]][/bold #e8a020][white] back[/white]",
             classes="sub-hint",
         )
 
@@ -2172,11 +2172,11 @@ class SecurityScreen(Screen):
                 w.update(Text("[y] confirm    [n] cancel", style="bold #c03040"))
             else:
                 w.update(
-                    "[dim #e8a020][s][/dim #e8a020][dim #5f87af] scan  [/dim #5f87af]"
-                    "[dim #e8a020][t][/dim #e8a020][dim #5f87af] trash  [/dim #5f87af]"
-                    "[dim #e8a020][d][/dim #e8a020][dim #5f87af] desktop  [/dim #5f87af]"
-                    "[dim #e8a020][k][/dim #e8a020][dim #5f87af] key  [/dim #5f87af]"
-                    "[dim #e8a020][q][/dim #e8a020][dim #5f87af] back[/dim #5f87af]"
+                    "[dim #e8a020][[s]][/dim #e8a020][dim #5f87af] scan  [/dim #5f87af]"
+                    "[dim #e8a020][[t]][/dim #e8a020][dim #5f87af] trash  [/dim #5f87af]"
+                    "[dim #e8a020][[d]][/dim #e8a020][dim #5f87af] desktop  [/dim #5f87af]"
+                    "[dim #e8a020][[k]][/dim #e8a020][dim #5f87af] key  [/dim #5f87af]"
+                    "[dim #e8a020][[q]][/dim #e8a020][dim #5f87af] back[/dim #5f87af]"
                 )
         except Exception:
             pass
