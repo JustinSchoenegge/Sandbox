@@ -8,9 +8,6 @@ Trust ladder — what each level actually does in the current codebase:
   L1 CORRESPONDENT — Observations and commentary. Basic read of dashboard state.
   L2 ADVISOR       — Adds music specs and ASCII art. Output still requires [y] approval.
   L3 EXECUTOR      — Full generation and chat. Daily limit: 75 calls. Watcher logs all output.
-                     NOTE: 'file_write' capability is declared here but NEON has no write
-                     mechanism — the Watcher submit pattern handles all persistence. The
-                     capability name is aspirational (future: NEON writes directly to notes).
   L4 AUTONOMOUS    — BEHAVIORAL SHIFT: NEON's self-perception changes. The trust_prefix
                      injected into every API call now reads "AUTONOMOUS" and lists
                      "autonomous_create" — NEON becomes bolder, more directive, less hedging.
@@ -54,12 +51,11 @@ _CAPABILITIES: dict[TrustLevel, list[str]] = {
     TrustLevel.OBSERVER:      [],
     TrustLevel.CORRESPONDENT: ["observations", "commentary"],
     TrustLevel.ADVISOR:       ["observations", "commentary", "music_spec", "ascii_art"],
-    # file_write declared but implemented via Watcher submit — see module docstring
-    TrustLevel.EXECUTOR:      ["observations", "commentary", "music_spec", "ascii_art", "file_write"],
+    TrustLevel.EXECUTOR:      ["observations", "commentary", "music_spec", "ascii_art"],
     # autonomous_create not yet checked in code — behavioral shift is through prompt context only
-    TrustLevel.AUTONOMOUS:    ["observations", "commentary", "music_spec", "ascii_art", "file_write", "autonomous_create"],
+    TrustLevel.AUTONOMOUS:    ["observations", "commentary", "music_spec", "ascii_art", "autonomous_create"],
     # peer_critique not yet checked in code — intended for NEON to challenge operator decisions
-    TrustLevel.COLLABORATOR:  ["observations", "commentary", "music_spec", "ascii_art", "file_write", "autonomous_create", "peer_critique"],
+    TrustLevel.COLLABORATOR:  ["observations", "commentary", "music_spec", "ascii_art", "autonomous_create", "peer_critique"],
 }
 
 
