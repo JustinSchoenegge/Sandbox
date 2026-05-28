@@ -2375,14 +2375,23 @@ class DarkHourApp(App):
 
     def action_toggle_mute(self) -> None:
         self._music_muted = not self._music_muted
-        proc = self._music_proc
-        if proc and proc.poll() is None:
+        if self._music_muted:
+            # Kill the process — SIGSTOP doesn't work on macOS because CoreAudio
+            # continues draining its buffer after the process is paused.
+            proc = self._music_proc
+            if proc and proc.poll() is None:
+                try:
+                    pgid = os.getpgid(proc.pid)
+                    os.killpg(pgid, signal.SIGKILL)
+                except Exception:
+                    pass
+            self._music_proc = None
             try:
-                pgid = os.getpgid(proc.pid)
-                sig = signal.SIGSTOP if self._music_muted else signal.SIGCONT
-                os.killpg(pgid, sig)
+                os.remove(_MUSIC_PID_FILE)
             except Exception:
                 pass
+        else:
+            self._music_proc = _start_bg_music()
         try:
             self.query_one(FooterControls).set_muted(self._music_muted, self._current_song)
         except Exception:
