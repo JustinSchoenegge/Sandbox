@@ -1253,13 +1253,13 @@ class PortfolioScreen(Screen):
         self._set_input("Ticker (e.g. AAPL)…")
 
     def action_edit_mode(self) -> None:
-        self._mode = "edit_num"
+        self._mode = "edit_ticker"
         self._edit_idx = None
-        self._set_input("Position # to edit…")
+        self._set_input("Ticker to edit (e.g. AAPL)…")
 
     def action_remove_mode(self) -> None:
         self._mode = "remove"
-        self._set_input("Position # to remove…")
+        self._set_input("Ticker to remove (e.g. AAPL)…")
 
     def action_goals_mode(self) -> None:
         self._mode = "goals"
@@ -1291,28 +1291,33 @@ class PortfolioScreen(Screen):
             return
 
         if self._mode == "remove":
+            ticker = value.upper()
             try:
                 portfolio = load_portfolio()
                 holdings = portfolio["holdings"]
-                if value.isdigit() and 0 < int(value) <= len(holdings):
-                    removed = holdings.pop(int(value) - 1)
+                idx = next((i for i, h in enumerate(holdings) if h["ticker"] == ticker), None)
+                if idx is not None:
+                    removed = holdings.pop(idx)
                     save_portfolio(portfolio)
                     msg.update(Text(f"{removed['ticker']} removed.", style="bold #00c040"))
                 else:
-                    msg.update(Text(f"Enter 1–{len(holdings)}.", style="bold #c03040"))
+                    names = "  ".join(h["ticker"] for h in holdings)
+                    msg.update(Text(f"Not found. Holdings: {names}", style="bold #c03040"))
             except Exception:
                 msg.update(Text("Error removing position.", style="bold #c03040"))
             self.action_cancel_input()
             self._populate_table()
             return
 
-        if self._mode == "edit_num":
+        if self._mode == "edit_ticker":
+            ticker = value.upper()
             try:
                 portfolio = load_portfolio()
                 holdings = portfolio["holdings"]
-                if value.isdigit() and 0 < int(value) <= len(holdings):
-                    self._edit_idx = int(value) - 1
-                    h = holdings[self._edit_idx]
+                idx = next((i for i, h in enumerate(holdings) if h["ticker"] == ticker), None)
+                if idx is not None:
+                    self._edit_idx = idx
+                    h = holdings[idx]
                     msg.update(Text(
                         f"{h['ticker']}: shares={h['shares']}  cost={h['avg_cost']}  tier={h.get('tier','?')}",
                         style="dim #5f87af",
@@ -1320,7 +1325,8 @@ class PortfolioScreen(Screen):
                     self._mode = "edit_field"
                     self._set_input("Field: shares / cost / tier")
                 else:
-                    msg.update(Text(f"Enter 1–{len(holdings)}.", style="bold #c03040"))
+                    names = "  ".join(h["ticker"] for h in holdings)
+                    msg.update(Text(f"Not found. Holdings: {names}", style="bold #c03040"))
             except Exception:
                 msg.update(Text("Error.", style="bold #c03040"))
             return
