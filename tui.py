@@ -2487,8 +2487,32 @@ class DarkHourApp(App):
         except Exception:
             pass  # not on dashboard screen
 
+def _kill_music_from_pidfile() -> None:
+    """Kill music using the PID file — works even when the proc reference is gone."""
+    try:
+        with open(_MUSIC_PID_FILE) as f:
+            pgid = int(f.read().strip())
+        os.killpg(pgid, signal.SIGKILL)
+    except Exception:
+        pass
+    try:
+        os.remove(_MUSIC_PID_FILE)
+    except Exception:
+        pass
+
+
 def main() -> None:
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+    # SIGHUP fires when the terminal window is closed (e.g. Ghostty Cmd+W).
+    # Python exits immediately on SIGHUP without running finally blocks, so
+    # the music process — being in its own session — keeps playing. Kill it.
+    def _on_hup(signum, frame):
+        _kill_music_from_pidfile()
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGHUP, _on_hup)
+
     app = DarkHourApp()
     try:
         app.run()
