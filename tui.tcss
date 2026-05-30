@@ -133,6 +133,17 @@ PortfolioWidget {
     color: #4a9eff;
 }
 
+#port-rows {
+    height: 1fr;
+    border: double #1e3a5f;
+    background: #060615;
+    padding: 1 1;
+}
+
+#port-content {
+    color: #f0f0ff;
+}
+
 .sub-hint {
     height: 1;
     content-align: center middle;

@@ -1142,7 +1142,8 @@ class PortfolioScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Static("[bold white]═══  PORTFOLIO  ═══[/bold white]", classes="sub-title")
         yield Static("", id="port-goals")
-        yield DataTable(id="port-table", cursor_type="row", show_cursor=False)
+        with ScrollableContainer(id="port-rows"):
+            yield Static("", id="port-content")
         yield Input(placeholder="", id="port-input", classes="hidden")
         yield Static("", id="port-msg", classes="sub-msg")
         yield Static(
@@ -1158,72 +1159,84 @@ class PortfolioScreen(Screen):
         self._mode: str | None = None
         self._pending: dict = {}
         self._edit_idx: int | None = None
-        self._populate_table()
-        self.query_one("#port-table", DataTable).can_focus = False
 
     def on_show(self) -> None:
         self._populate_table()
 
     def _populate_table(self) -> None:
-        table = self.query_one("#port-table", DataTable)
-        table.clear(columns=True)
-        table.add_columns("#", "Ticker", "Sec", "Alloc", "Tier", "P&L", "Fit")
+        from rich.console import Group as RichGroup
         try:
             portfolio = load_portfolio()
             goals = portfolio.get("goals", [])
-            goals_str = "  ·  ".join(goals) if goals else "no goals — press g to add"
+            goals_str = "  ·  ".join(goals) if goals else "no goals — press [g] to add"
             try:
                 self.query_one("#port-goals", Static).update(
                     Text(f"Goals: {goals_str}", style="dim #4a9eff")
                 )
             except Exception:
                 pass
-            rows = calculate_weights(portfolio["holdings"]) if portfolio["holdings"] else []
+
+            holdings = portfolio.get("holdings", [])
             msg = self.query_one("#port-msg", Static)
-            if not rows:
-                msg.update(Text("No positions yet — press a to add one.", style="dim #2a3a5a"))
+            content_w = self.query_one("#port-content", Static)
+
+            if not holdings:
+                content_w.update(Text("No positions yet — press [a] to add one.", style="dim #2a3a5a"))
+                msg.update(Text(""))
                 return
+
+            rows = calculate_weights(holdings)
             total = sum(r["value"] for r in rows)
+
+            # Bar fills available width: screen width minus indent (2) and pct label (8)
+            bar_width = max(20, (self.size.width or 110) - 12)
+
+            blocks: list[Text] = []
             for i, r in enumerate(rows, 1):
                 w = r["weight"]
-                filled = max(1, round(w * 10))
-                pct = f"{w * 100:.1f}%"
-                alloc = Text()
-                alloc.append("█" * filled, style="#4a9eff")
-                alloc.append("░" * (10 - filled), style="dim #1e3a5f")
-                alloc.append(f" {pct}", style="dim #5f87af")
-
                 pnl_pct = (r["current_price"] - r["avg_cost"]) / r["avg_cost"] * 100
                 up = pnl_pct >= 0
-                pnl_cell = Text()
-                pnl_cell.append(
-                    f"{pnl_pct:+.1f}%{'↑' if up else '↓'}",
-                    style="bold #00c040" if up else "bold #c03040",
-                )
-
-                al_label, al_style = check_alignment(r.get("sector", ""), goals)
-                if "Strong" in al_label:
-                    dot, dot_style = "●", "bold green"
-                elif "Partial" in al_label:
-                    dot, dot_style = "◑", "bold yellow"
-                else:
-                    dot, dot_style = "○", "dim red"
-
                 tier = r.get("tier", "?")
                 tier_style = TIER_STYLES.get(tier, "white")
+                al_label, _ = check_alignment(r.get("sector", ""), goals)
+                if "Strong" in al_label:
+                    dot, dot_style = "●", "bold #00c040"
+                elif "Partial" in al_label:
+                    dot, dot_style = "◑", "bold #e8a020"
+                else:
+                    dot, dot_style = "○", "dim #c03040"
 
-                table.add_row(
-                    str(i),
-                    Text(r["ticker"], style="bold white"),
-                    Text(r.get("sector", "?"), style="dim #5f87af"),
-                    alloc,
-                    Text(tier, style=tier_style),
-                    pnl_cell,
-                    Text(dot, style=dot_style),
-                )
-            msg.update(Text(f"${total:,.2f} total  ·  {len(rows)} position(s)", style="dim #5f87af"))
+                # ── info line ──────────────────────────────────────────
+                t = Text()
+                t.append(f"  {r['ticker']:<6}", style="bold white")
+                name = r.get("name", r["ticker"])[:20]
+                t.append(f"{name:<22}", style="dim #5f87af")
+                sector = r.get("sector", "?")[:10]
+                t.append(f"{sector:<12}", style="dim #4a5568")
+                t.append(f"{tier:<5}", style=tier_style)
+                t.append(f"{pnl_pct:+.1f}%{'↑' if up else '↓'}",
+                         style="bold #00c040" if up else "bold #c03040")
+                t.append("  ")
+                t.append(dot, style=dot_style)
+
+                # ── allocation bar (full-width, transparent feel) ───────
+                t.append("\n  ")
+                filled = max(1, round(w * bar_width))
+                empty  = bar_width - filled
+                t.append("▓" * filled, style="#1a4a7a")   # dim steel — subtle fill
+                t.append("░" * empty,  style="#091520")    # near-black — fades out
+                t.append(f"  {w * 100:.1f}%", style="bold #4a9eff")
+
+                blocks.append(t)
+
+            content_w.update(RichGroup(*[b for block in blocks for b in (block, Text(""))]))
+            msg.update(Text(f"${total:,.2f} total  ·  {len(rows)} position{'s' if len(rows) != 1 else ''}",
+                            style="dim #5f87af"))
         except Exception:
-            self.query_one("#port-msg", Static).update(Text("Portfolio unavailable.", style="dim"))
+            try:
+                self.query_one("#port-msg", Static).update(Text("Portfolio unavailable.", style="dim"))
+            except Exception:
+                pass
 
     def _set_input(self, placeholder: str) -> None:
         inp = self.query_one("#port-input", Input)
