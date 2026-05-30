@@ -549,7 +549,7 @@ class DashboardScreen(Screen):
         ("6", "push_screen_nav_5", "Music"),
         ("7", "push_screen_nav_6", "Bots"),
         ("8", "push_screen_nav_7", "Security"),
-        ("q", "app.action_quit_confirm", "Quit"),
+        ("q", "app.quit", "Quit"),
     ]
 
     def __init__(self, name: str, is_admin: bool = False) -> None:
@@ -2486,18 +2486,6 @@ class DarkHourApp(App):
             self.query_one(FooterControls).set_muted(self._music_muted, self._current_song)
         except Exception:
             pass  # not on dashboard screen
-
-    def action_quit_confirm(self) -> None:
-        if getattr(self, "_quit_pending", False):
-            self.exit()
-        else:
-            self._quit_pending = True
-            self.set_timer(2, self._clear_quit_pending)
-            self.notify("Press q again to quit", severity="warning", timeout=2)
-
-    def _clear_quit_pending(self) -> None:
-        self._quit_pending = False
-
 
 def main() -> None:
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
