@@ -11,10 +11,12 @@ from storage import atomic_save
 warnings.filterwarnings("ignore", message=".*LibreSSL.*")
 
 CACHE_FILE = "data/prices_cache.json"
-CACHE_TTL_MINUTES = 5
+CACHE_TTL_MINUTES = 5       # disk cache TTL at startup
+SESSION_TTL_MINUTES = 30    # per-price TTL within a session
 
-_session_cache = {}
-_prev_close_cache = {}
+_session_cache: dict = {}
+_prev_close_cache: dict = {}
+_price_fetched_at: dict = {}   # ticker → datetime of last network fetch
 _cache_loaded = False
 _cache_time = None
 
@@ -34,6 +36,9 @@ def _load_disk_cache():
             _session_cache.update(data.get("prices", {}))
             _prev_close_cache.update(data.get("prev_closes", {}))
             _cache_time = cached_at
+            # Treat all disk-loaded prices as fetched at disk cache time
+            for ticker in _session_cache:
+                _price_fetched_at[ticker] = cached_at
     except (json.JSONDecodeError, ValueError, KeyError):
         pass
 
@@ -48,9 +53,17 @@ def _save_disk_cache():
     })
 
 
+def _session_price_stale(ticker: str) -> bool:
+    """True if the in-session price is older than SESSION_TTL_MINUTES."""
+    ts = _price_fetched_at.get(ticker)
+    if ts is None:
+        return True
+    return (datetime.now() - ts).total_seconds() > SESSION_TTL_MINUTES * 60
+
+
 def fetch_price(ticker, fallback=None):
     _load_disk_cache()
-    if ticker in _session_cache:
+    if ticker in _session_cache and not _session_price_stale(ticker):
         return _session_cache[ticker]
     try:
         import yfinance as yf
@@ -61,6 +74,7 @@ def fetch_price(ticker, fallback=None):
             prev = info.previous_close
         if price and price > 0:
             _session_cache[ticker] = round(price, 2)
+            _price_fetched_at[ticker] = datetime.now()
             if prev and prev > 0:
                 _prev_close_cache[ticker] = round(prev, 2)
             _save_disk_cache()
@@ -90,7 +104,9 @@ def last_updated_label():
 def cached_price(ticker: str) -> "float | None":
     """Return cached current price for ticker — no network calls, no blocking."""
     _load_disk_cache()
-    return _session_cache.get(ticker)
+    if ticker in _session_cache and not _session_price_stale(ticker):
+        return _session_cache[ticker]
+    return None
 
 
 def cached_changes() -> dict:

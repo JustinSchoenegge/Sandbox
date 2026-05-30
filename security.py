@@ -81,10 +81,13 @@ def run_checks():
 def empty_trash() -> tuple[bool, str]:
     """Empty macOS Trash via AppleScript. Returns (success, message)."""
     try:
-        subprocess.run(
+        r = subprocess.run(
             ["osascript", "-e", 'tell application "Finder" to empty trash'],
             capture_output=True, timeout=10,
         )
+        if r.returncode != 0:
+            err = (r.stderr or r.stdout).strip()[:80]
+            return False, f"Trash could not be emptied: {err or 'unknown error'}"
         return True, "Trash emptied."
     except Exception as e:
         return False, f"Failed: {str(e)[:60]}"
@@ -99,8 +102,12 @@ def archive_desktop() -> tuple[bool, str]:
     for item in desktop.iterdir():
         if item.name.startswith(".") or item.name in {"Archive"} or item.suffix == ".command":
             continue
+        dest = archive / item.name
+        if dest.exists():
+            skipped.append(item.name)
+            continue
         try:
-            item.rename(archive / item.name)
+            item.rename(dest)
             moved += 1
         except Exception:
             skipped.append(item.name)

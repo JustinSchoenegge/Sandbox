@@ -135,7 +135,7 @@ class DashboardHeader(Static):
         self._date = now.strftime("%a %b %d")
         self.refresh()
 
-    @work(exclusive=False)
+    @work(exclusive=True)
     async def _check_live(self) -> None:
         import asyncio
         try:
@@ -722,7 +722,7 @@ class HabitsScreen(Screen):
     def on_key(self, event: events.Key) -> None:
         if self._mode is not None:
             return
-        if event.character and event.character.isdigit():
+        if event.character and event.character.isdigit() and event.character != "0":
             event.stop()
             shortcut_idx = int(event.character) - 1  # 0-based shortcut position
             incomplete = self._incomplete_indices()
@@ -848,7 +848,7 @@ class TasksScreen(Screen):
     def on_key(self, event: events.Key) -> None:
         if self._mode is not None:
             return
-        if event.character and event.character.isdigit():
+        if event.character and event.character.isdigit() and event.character != "0":
             event.stop()
             idx = int(event.character) - 1
             try:
@@ -1052,7 +1052,7 @@ class MusicScreen(Screen):
     def on_key(self, event: events.Key) -> None:
         if self._mode is not None:
             return
-        if event.character and event.character.isdigit():
+        if event.character and event.character.isdigit() and event.character != "0":
             event.stop()
             idx = int(event.character) - 1
             try:
@@ -2136,7 +2136,11 @@ class PersonaScreen(Screen):
 
     def on_mount(self) -> None:
         bot: Bot | None = getattr(self.app, "_bot", None)
-        self._persona: dict = dict(bot.persona) if bot else {}
+        if bot:
+            # Deep-copy traits list so discard doesn't mutate the live bot
+            self._persona: dict = {**bot.persona, "traits": list(bot.persona.get("traits", []))}
+        else:
+            self._persona = {}
         self._input_mode: str | None = None
         self.query_one("#persona-title", Static).update("[bold white]NEON  ·  PERSONA EDITOR[/bold white]")
         if bot:
@@ -2252,8 +2256,17 @@ class PersonaScreen(Screen):
         name = self.query_one("#field-name", Input).value.strip()
         phil = self.query_one("#field-philosophy", Input).value.strip()
         const = self.query_one("#field-constraint", Input).value.strip()
-        if name:
-            self._persona["name"] = name
+
+        if not name:
+            try:
+                self.query_one("#persona-hint", Static).update(
+                    Text("Name cannot be empty.", style="bold #c03040")
+                )
+            except Exception:
+                pass
+            return
+
+        self._persona["name"] = name
         if phil:
             self._persona["aesthetic_philosophy"] = phil
         if const:
