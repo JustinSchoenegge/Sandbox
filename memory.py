@@ -71,7 +71,7 @@ class MemoryManager:
             self._approved_verbatim.append({
                 "type": output_type,
                 "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "content": content_preview,
+                "content": content_preview[:2000],  # cap so one long entry can't block all others
             })
             self._approved_verbatim = self._approved_verbatim[-_MAX_VERBATIM:]
             self._save()

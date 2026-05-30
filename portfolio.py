@@ -35,12 +35,18 @@ def get_stock_price(ticker):
     return None
 
 
+def safe_pnl(current_price: float, avg_cost: float) -> float:
+    """Return P&L % or 0.0 if avg_cost is zero to avoid ZeroDivisionError."""
+    return (current_price - avg_cost) / avg_cost * 100 if avg_cost else 0.0
+
+
 def calculate_weights(holdings):
     rows = []
     for h in holdings:
         ticker = h["ticker"]
-        # Priority: live cache → static list → avg_cost (never silently 0% P&L)
-        price = cached_price(ticker) or get_stock_price(ticker) or h["avg_cost"]
+        # Use is-not-None so a cached price of 0.0 isn't skipped (falsy-zero bug)
+        live = cached_price(ticker)
+        price = live if live is not None else (get_stock_price(ticker) or h["avg_cost"])
         value = price * h["shares"]
         rows.append({**h, "current_price": price, "value": value})
     total = sum(r["value"] for r in rows) or 1

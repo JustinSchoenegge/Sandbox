@@ -30,12 +30,17 @@ def save_notes(notes):
 def get_notes_meta() -> dict:
     """Return {count, last_text} without loading the full notes list."""
     if not os.path.exists(NOTES_META_FILE):
-        # Cold start: build sidecar from main file
+        # Cold start — build sidecar without rewriting notes.json
         notes = load_notes()
-        if notes:
-            save_notes(notes)
-            return {"count": len(notes), "last_text": notes[-1]["text"][:120]}
-        return {"count": 0, "last_text": ""}
+        meta = {
+            "count": len(notes),
+            "last_text": notes[-1]["text"][:120] if notes else "",
+        }
+        try:
+            atomic_save(NOTES_META_FILE, meta)
+        except Exception:
+            pass
+        return meta
     try:
         with open(NOTES_META_FILE, "r") as f:
             return json.load(f)

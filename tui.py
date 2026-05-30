@@ -29,7 +29,7 @@ from habits import load_habits, is_done_today, calculate_streak, mark_done, save
 from tasks import load_tasks, save_tasks
 from notes import load_notes, save_notes, get_notes_meta
 from music import load_ideas, save_ideas
-from portfolio import load_portfolio, calculate_weights, save_portfolio, check_alignment
+from portfolio import load_portfolio, calculate_weights, save_portfolio, check_alignment, safe_pnl
 from stocks import STOCKS, TIER_STYLES
 from game import main as play_game
 import vitals
@@ -58,8 +58,8 @@ def _boot_sound() -> None:
 _MUSIC_PID_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", ".music.pid")
 
 
-def _kill_stale_music() -> None:
-    """Kill any music process left over from a previous unclean exit."""
+def _kill_music_from_pidfile() -> None:
+    """Kill music process via PID file — works at startup and in signal handlers."""
     try:
         with open(_MUSIC_PID_FILE) as f:
             pgid = int(f.read().strip())
@@ -74,7 +74,7 @@ def _kill_stale_music() -> None:
 
 def _start_bg_music() -> "subprocess.Popen | None":
     """Loop vicecity.m4a in the background. Returns the process so it can be paused/terminated."""
-    _kill_stale_music()
+    _kill_music_from_pidfile()
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "vicecity.m4a")
     if not os.path.exists(path):
         return None
@@ -327,7 +327,7 @@ class PortfolioWidget(Static):
                 t.append(f"${total:,.0f}  ·  {len(rows)} pos\n", style="bold #00c040")
                 t.append("──────────────────────\n", style="dim #1e3a5f")
                 for r in rows:
-                    pnl = (r["current_price"] - r["avg_cost"]) / r["avg_cost"] * 100
+                    pnl = safe_pnl(r["current_price"], r["avg_cost"])
                     up = pnl >= 0
                     arrow = "↑" if up else "↓"
                     filled = max(1, round(r["weight"] * 14))
@@ -575,12 +575,6 @@ class DashboardScreen(Screen):
 
     def on_show(self) -> None:
         try:
-            muted = getattr(self.app, "_music_muted", False)
-            song = getattr(self.app, "_current_song", "")
-            self.query_one(FooterControls).set_muted(muted, song)
-        except Exception:
-            pass
-        try:
             self.query_one("#habits-widget", HabitsWidget).refresh_data()
         except Exception:
             pass
@@ -770,6 +764,7 @@ class HabitsScreen(Screen):
                     data["habits"].append(value)
                     data["logs"].setdefault(value, [])
                     save_habits(data)
+                    invalidate_context_cache()
                     msg.update(Text(f"{value} added.", style="bold #00c040"))
             elif self._mode == "remove":
                 if value.isdigit():
@@ -777,6 +772,7 @@ class HabitsScreen(Screen):
                     if 0 <= idx < len(habits):
                         removed = habits.pop(idx)
                         save_habits(data)
+                        invalidate_context_cache()
                         msg.update(Text(f"{removed} removed.", style="bold #00c040"))
                     else:
                         msg.update(Text("Invalid habit number.", style="bold #c03040"))
@@ -900,6 +896,7 @@ class TasksScreen(Screen):
                     tasks = load_tasks()
                     tasks.append({"name": value, "done": False})
                     save_tasks(tasks)
+                    invalidate_context_cache()
                     msg.update(Text(f"'{value}' added.", style="bold #00c040"))
                 except Exception:
                     msg.update(Text("Error saving task.", style="bold #c03040"))
@@ -991,6 +988,7 @@ class NotesScreen(Screen):
                         "tags": tags,
                     })
                     save_notes(notes)
+                    invalidate_context_cache()
                     msg.update(Text("Note saved.", style="bold #00c040"))
                 except Exception:
                     msg.update(Text("Error saving note.", style="bold #c03040"))
@@ -1194,7 +1192,7 @@ class PortfolioScreen(Screen):
             blocks: list[Text] = []
             for i, r in enumerate(rows, 1):
                 w = r["weight"]
-                pnl_pct = (r["current_price"] - r["avg_cost"]) / r["avg_cost"] * 100
+                pnl_pct = safe_pnl(r["current_price"], r["avg_cost"])
                 up = pnl_pct >= 0
                 tier = r.get("tier", "?")
                 tier_style = TIER_STYLES.get(tier, "white")
@@ -1283,6 +1281,7 @@ class PortfolioScreen(Screen):
                     portfolio = load_portfolio()
                     portfolio["goals"] = [g.strip() for g in value.split(",") if g.strip()]
                     save_portfolio(portfolio)
+                    invalidate_context_cache()
                     msg.update(Text("Goals updated.", style="bold #00c040"))
                 except Exception:
                     msg.update(Text("Error saving goals.", style="bold #c03040"))
@@ -1299,6 +1298,7 @@ class PortfolioScreen(Screen):
                 if idx is not None:
                     removed = holdings.pop(idx)
                     save_portfolio(portfolio)
+                    invalidate_context_cache()
                     msg.update(Text(f"{removed['ticker']} removed.", style="bold #00c040"))
                 else:
                     names = "  ".join(h["ticker"] for h in holdings)
@@ -1356,6 +1356,7 @@ class PortfolioScreen(Screen):
                 key = "shares" if self._mode == "edit_shares" else "avg_cost"
                 portfolio["holdings"][self._edit_idx][key] = float(value)
                 save_portfolio(portfolio)
+                invalidate_context_cache()
                 msg.update(Text("Position updated.", style="bold #00c040"))
             except Exception:
                 msg.update(Text("Error updating.", style="bold #c03040"))
@@ -1372,6 +1373,7 @@ class PortfolioScreen(Screen):
                 portfolio = load_portfolio()
                 portfolio["holdings"][self._edit_idx]["tier"] = tier
                 save_portfolio(portfolio)
+                invalidate_context_cache()
                 msg.update(Text("Tier updated.", style="bold #00c040"))
             except Exception:
                 msg.update(Text("Error updating.", style="bold #c03040"))
@@ -1407,11 +1409,13 @@ class PortfolioScreen(Screen):
 
         elif self._mode == "cost":
             try:
-                float(value)
+                cost = float(value)
+                if cost <= 0:
+                    raise ValueError
             except ValueError:
-                msg.update(Text("Enter a number for cost.", style="bold #c03040"))
+                msg.update(Text("Enter a cost greater than 0.", style="bold #c03040"))
                 return
-            self._pending["avg_cost"] = float(value)
+            self._pending["avg_cost"] = cost
             self._mode = "tier"
             tiers = "/".join(self._TIERS)
             self._set_input(f"Tier ({tiers})…")
@@ -1434,6 +1438,7 @@ class PortfolioScreen(Screen):
                     "tier": tier,
                 })
                 save_portfolio(portfolio)
+                invalidate_context_cache()
                 msg.update(Text(f"{ticker} added.", style="bold #00c040"))
             except Exception:
                 msg.update(Text("Error saving position.", style="bold #c03040"))
@@ -1548,7 +1553,7 @@ def _build_neon_context() -> dict:
                     "ticker": r["ticker"],
                     "shares": r.get("shares", 0),
                     "weight": round(r["weight"] * 100, 1),
-                    "pnl": round((r["current_price"] - r["avg_cost"]) / r["avg_cost"] * 100, 1),
+                    "pnl": round(safe_pnl(r["current_price"], r["avg_cost"]), 1),
                 }
                 for r in rows[:4]
             ]
@@ -2474,13 +2479,15 @@ class DarkHourApp(App):
         self._music_proc = _start_bg_music()
         if self._music_proc:
             self._current_song = "VICE CITY"
-        # Apply mute if the user pressed M during the 2s boot delay
+        # Apply mute if the user pressed M during the 2s boot delay.
+        # Use SIGKILL (not SIGSTOP) — CoreAudio drains its buffer after SIGSTOP on macOS.
         if self._music_muted and self._music_proc:
             try:
                 pgid = os.getpgid(self._music_proc.pid)
-                os.killpg(pgid, signal.SIGSTOP)
+                os.killpg(pgid, signal.SIGKILL)
             except Exception:
                 pass
+            self._music_proc = None
 
     def action_toggle_mute(self) -> None:
         self._music_muted = not self._music_muted
@@ -2505,20 +2512,6 @@ class DarkHourApp(App):
             self.query_one(FooterControls).set_muted(self._music_muted, self._current_song)
         except Exception:
             pass  # not on dashboard screen
-
-def _kill_music_from_pidfile() -> None:
-    """Kill music using the PID file — works even when the proc reference is gone."""
-    try:
-        with open(_MUSIC_PID_FILE) as f:
-            pgid = int(f.read().strip())
-        os.killpg(pgid, signal.SIGKILL)
-    except Exception:
-        pass
-    try:
-        os.remove(_MUSIC_PID_FILE)
-    except Exception:
-        pass
-
 
 def main() -> None:
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
