@@ -386,13 +386,20 @@ class BotWidget(HUDWidget):
             self.update(Text("Bot unavailable", style="dim"))
 
 
-class FooterControls(Static):
+class FooterControls(Widget):
     """Footer bar: nav key hints left, music status indicator pinned right."""
 
-    def on_mount(self) -> None:
-        self.set_muted(False)
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._muted: bool = False
+        self._song: str = ""
 
     def set_muted(self, muted: bool, song: str = "") -> None:
+        self._muted = muted
+        self._song = song
+        self.refresh()
+
+    def render(self) -> RenderableType:
         from rich.table import Table as RichTable
         nav = Text()
         for key, label in [
@@ -407,16 +414,16 @@ class FooterControls(Static):
         nav.append("QUIT", style="dim #5f87af")
 
         music = Text(justify="right")
-        if muted:
+        if self._muted:
             music.append("✕ MUTED", style="bold #c03040")
         else:
-            music.append(f"♪  {song}" if song else "♪  LIVE", style="bold #00c040")
+            music.append(f"♪  {self._song}" if self._song else "♪  LIVE", style="bold #00c040")
 
         grid = RichTable.grid(expand=True)
         grid.add_column(justify="left")
         grid.add_column(justify="right")
         grid.add_row(nav, music)
-        self.update(grid)
+        return grid
 
 
 class VitalsBar(Static):
