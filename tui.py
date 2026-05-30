@@ -1220,12 +1220,14 @@ class PortfolioScreen(Screen):
                 t.append(dot, style=dot_style)
 
                 # ── allocation bar (full-width, transparent feel) ───────
+                pct_str  = f" {w * 100:.1f}%"
+                bar_usable = bar_width - len(pct_str)  # reserve right edge for label
+                filled = max(1, round(w * bar_usable))
+                empty  = bar_usable - filled
                 t.append("\n  ")
-                filled = max(1, round(w * bar_width))
-                empty  = bar_width - filled
-                t.append("▓" * filled, style="#1a4a7a")   # dim steel — subtle fill
-                t.append("░" * empty,  style="#091520")    # near-black — fades out
-                t.append(f"  {w * 100:.1f}%", style="bold #4a9eff")
+                t.append("▓" * filled, style="#1a4a7a")
+                t.append("░" * empty,  style="#091520")
+                t.append(pct_str, style="bold #4a9eff")  # flush at right edge of bar
 
                 blocks.append(t)
 
