@@ -1167,7 +1167,7 @@ class PortfolioScreen(Screen):
     def _populate_table(self) -> None:
         table = self.query_one("#port-table", DataTable)
         table.clear(columns=True)
-        table.add_columns("#", "Ticker", "Sector", "Allocation", "Tier", "P&L", "Fit")
+        table.add_columns("#", "Ticker", "Sec", "Alloc", "Tier", "P&L", "Fit")
         try:
             portfolio = load_portfolio()
             goals = portfolio.get("goals", [])
@@ -1186,11 +1186,11 @@ class PortfolioScreen(Screen):
             total = sum(r["value"] for r in rows)
             for i, r in enumerate(rows, 1):
                 w = r["weight"]
-                filled = max(1, round(w * 20))
+                filled = max(1, round(w * 10))
                 pct = f"{w * 100:.1f}%"
                 alloc = Text()
                 alloc.append("█" * filled, style="#4a9eff")
-                alloc.append("░" * (20 - filled), style="dim #1e3a5f")
+                alloc.append("░" * (10 - filled), style="dim #1e3a5f")
                 alloc.append(f" {pct}", style="dim #5f87af")
 
                 pnl_pct = (r["current_price"] - r["avg_cost"]) / r["avg_cost"] * 100
@@ -1595,10 +1595,8 @@ class BotsScreen(Screen):
         yield Static("", id="watcher-bar")
         yield Static(
             "[dim #2a3a5a]"
-            "[[c]] chat  [[o]] observe  [[u]] ux  [[g]] music  [[a]] art  "
-            "[[t]] trait  [[x]] synthesis  [[v]] portfolio  "
-            "[[y]] approve output  [[n]] reject  [[s]] save chat  "
-            "[[e]] export notes  [[p]] persona  [+/-] trust  [[q]] back"
+            "[[c]] chat  [[o]] observe  [[u]] ux  [[g]] music  [[a]] art  [[t]] trait  [[x]] synth  [[v]] port\n"
+            "[[y]] approve  [[n]] reject  [[s]] save  [[e]] export  [[p]] persona  [+/-] trust  [[q]] back"
             "[/dim #2a3a5a]",
             id="bots-keyhint",
         )

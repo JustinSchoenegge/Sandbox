@@ -227,7 +227,7 @@ Input:focus {
 }
 
 #bots-history {
-    width: 2fr;
+    width: 1fr;
     border: double #1e3a5f;
     background: #060615;
     padding: 0 1;
@@ -269,7 +269,7 @@ Input:focus {
 }
 
 #bots-keyhint {
-    height: 1;
+    height: 2;
     content-align: center middle;
     color: #2a3a5a;
     text-style: dim;
