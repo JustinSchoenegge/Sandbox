@@ -387,16 +387,33 @@ class BotWidget(HUDWidget):
 
 
 class FooterControls(Widget):
-    """Footer bar: nav key hints left, music status indicator pinned right."""
+    """Footer bar: nav key hints left, music status indicator pinned right.
+
+    Reads mute state directly from the app on a 1s tick rather than waiting
+    for external set_muted calls — avoids silent query_one failures.
+    """
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._muted: bool = False
         self._song: str = ""
 
+    def on_mount(self) -> None:
+        self._sync()
+        self.set_interval(1, self._sync)
+
+    def _sync(self) -> None:
+        muted = getattr(self.app, "_music_muted", False)
+        song  = getattr(self.app, "_current_song", "")
+        if muted != self._muted or song != self._song:
+            self._muted = muted
+            self._song  = song
+            self.refresh()
+
     def set_muted(self, muted: bool, song: str = "") -> None:
+        """Explicit update — still supported for immediate response."""
         self._muted = muted
-        self._song = song
+        self._song  = song
         self.refresh()
 
     def render(self) -> RenderableType:
