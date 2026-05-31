@@ -4,10 +4,14 @@ Persona 3 × GTA aesthetic.  Replaces app.py as the main entry point.
 """
 
 import os
-import signal
+import platform
 import shlex
+import shutil
+import signal
 import subprocess
 from datetime import datetime, timedelta
+
+_SYSTEM = platform.system()   # "Darwin" | "Linux" | "Windows"
 
 from rich.text import Text
 from rich.console import RenderableType
@@ -25,34 +29,41 @@ from textual import events
 from config import load_config, load_env
 from dashboard import get_greeting, get_quote
 from notify import notify
-from habits import load_habits, is_done_today, calculate_streak, mark_done, save_habits
+from habits import load_habits, is_done_today, calculate_streak
 from tasks import load_tasks, save_tasks
 from notes import load_notes, save_notes, get_notes_meta
 from music import load_ideas, save_ideas
 from portfolio import load_portfolio, calculate_weights, save_portfolio, check_alignment, safe_pnl
-from stocks import STOCKS, TIER_STYLES
+from stocks import STOCKS
 from game import main as play_game
 import vitals
 import security
 import permissions
+import context as _ctx_mod
 from memory import MemoryManager
 from watcher import Watcher
 from bot import Bot, BotOutput, load_persona, save_persona
 from inspiration import file_count as inspiration_count, export_notes
 from prices import cached_changes
+from screens.habits import HabitsScreen
+from screens.portfolio import PortfolioScreen
 
 load_env()
 
 # ── boot sound ─────────────────────────────────────────────────────────────────
 
 def _boot_sound() -> None:
-    path = "/System/Library/Sounds/Glass.aiff"
-    if os.path.exists(path):
-        subprocess.Popen(
-            ["afplay", path],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+    if _SYSTEM == "Darwin":
+        path = "/System/Library/Sounds/Glass.aiff"
+        if os.path.exists(path):
+            subprocess.Popen(["afplay", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    elif _SYSTEM == "Linux":
+        # Use paplay (PulseAudio) or aplay with a fallback system bell
+        for cmd in (["paplay", "/usr/share/sounds/freedesktop/stereo/bell.oga"],
+                    ["aplay", "/usr/share/sounds/alsa/Front_Center.wav"]):
+            if shutil.which(cmd[0]) and os.path.exists(cmd[1]):
+                subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                break
 
 
 _MUSIC_PID_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", ".music.pid")
@@ -72,18 +83,39 @@ def _kill_music_from_pidfile() -> None:
         pass
 
 
-def _start_bg_music() -> "subprocess.Popen | None":
-    """Loop vicecity.m4a in the background. Returns the process so it can be paused/terminated."""
+def _audio_loop_cmd(path: str) -> "list[str] | None":
+    """Return the command list to loop an audio file, or None if no player found."""
+    if _SYSTEM == "Darwin":
+        quoted = shlex.quote(path)
+        return ["bash", "-c", f"while true; do afplay {quoted}; done"]
+    if _SYSTEM == "Linux":
+        if shutil.which("mpv"):
+            return ["mpv", "--no-video", "--loop=inf", "--really-quiet", path]
+        if shutil.which("cvlc"):
+            return ["cvlc", "--repeat", "--no-video", "--quiet", path]
+        if shutil.which("vlc"):
+            return ["vlc", "--repeat", "--no-video", "--quiet", path]
+    return None
+
+
+def _start_bg_music(bg_path: str = "") -> "subprocess.Popen | None":
+    """Loop an audio file in the background. Uses bg_path or falls back to vicecity.m4a."""
     _kill_music_from_pidfile()
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "vicecity.m4a")
+    base = os.path.dirname(os.path.abspath(__file__))
+    if bg_path and os.path.exists(bg_path):
+        path = bg_path
+    else:
+        path = os.path.join(base, "assets", "vicecity.m4a")
     if not os.path.exists(path):
         return None
-    cmd = f"while true; do afplay {shlex.quote(path)}; done"
+    shell_cmd = _audio_loop_cmd(path)
+    if shell_cmd is None:
+        return None
     proc = subprocess.Popen(
-        ["bash", "-c", cmd],
+        shell_cmd,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        start_new_session=True,  # isolated process group so SIGSTOP/SIGCONT don't hit Python
+        start_new_session=True,
     )
     try:
         pgid = os.getpgid(proc.pid)
@@ -139,8 +171,9 @@ class DashboardHeader(Static):
     async def _check_live(self) -> None:
         import asyncio
         try:
+            flags = ["-ix"] if _SYSTEM == "Darwin" else ["-x"]
             r = await asyncio.to_thread(
-                lambda: subprocess.run(["pgrep", "-ix", "obs"], capture_output=True, timeout=1)
+                lambda: subprocess.run(["pgrep"] + flags + ["obs"], capture_output=True, timeout=1)
             )
             live = r.returncode == 0
             if live != self._is_live:
@@ -541,14 +574,14 @@ class VitalsBar(Static):
 
 class DashboardScreen(Screen):
     BINDINGS = [
-        ("1", "push_screen_nav_0", "Habits"),
-        ("2", "push_screen_nav_1", "Tasks"),
-        ("3", "push_screen_nav_2", "Notes"),
-        ("4", "push_screen_nav_3", "Game"),
-        ("5", "push_screen_nav_4", "Portfolio"),
-        ("6", "push_screen_nav_5", "Music"),
-        ("7", "push_screen_nav_6", "Bots"),
-        ("8", "push_screen_nav_7", "Security"),
+        ("1", "push_screen_nav(0)", "Habits"),
+        ("2", "push_screen_nav(1)", "Tasks"),
+        ("3", "push_screen_nav(2)", "Notes"),
+        ("4", "push_screen_nav(3)", "Game"),
+        ("5", "push_screen_nav(4)", "Portfolio"),
+        ("6", "push_screen_nav(5)", "Music"),
+        ("7", "push_screen_nav(6)", "Bots"),
+        ("8", "push_screen_nav(7)", "Security"),
         ("q", "app.quit", "Quit"),
     ]
 
@@ -591,198 +624,16 @@ class DashboardScreen(Screen):
         except Exception:
             pass
 
-    def action_push_screen_nav_0(self) -> None:
-        self.app.push_screen(_NAV[0][2](self._name))
-
-    def action_push_screen_nav_1(self) -> None:
-        self.app.push_screen(_NAV[1][2](self._name))
-
-    def action_push_screen_nav_2(self) -> None:
-        self.app.push_screen(_NAV[2][2](self._name))
-
-    def action_push_screen_nav_3(self) -> None:
-        self.app.push_screen(_NAV[3][2](self._name))
-
-    def action_push_screen_nav_4(self) -> None:
-        self.app.push_screen(_NAV[4][2](self._name))
-
-    def action_push_screen_nav_5(self) -> None:
-        self.app.push_screen(_NAV[5][2](self._name))
-
-    def action_push_screen_nav_6(self) -> None:
-        self.app.push_screen(_NAV[6][2](self._name))
-
-    def action_push_screen_nav_7(self) -> None:
-        self.app.push_screen(_NAV[7][2](self._name))
+    def action_push_screen_nav(self, idx: int) -> None:
+        if idx == 7 and not self._is_admin:
+            self.notify("Security screen requires admin access", severity="warning")
+            return
+        self.app.push_screen(_NAV[idx][2](self._name))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Habits screen
 # ══════════════════════════════════════════════════════════════════════════════
-
-class HabitsScreen(Screen):
-    BINDINGS = [
-        ("q", "app.pop_screen", "Back"),
-        ("a", "add_mode", "Add"),
-        ("r", "remove_mode", "Remove"),
-        ("escape", "cancel_input", "Cancel"),
-    ]
-
-    def compose(self) -> ComposeResult:
-        yield Static("[bold white]═══  HABITS  ═══[/bold white]", classes="sub-title")
-        yield DataTable(id="habits-table", cursor_type="row", show_cursor=True)
-        yield Input(placeholder="New habit name…", id="habit-input", classes="hidden")
-        yield Static("", id="habits-msg", classes="sub-msg")
-        yield Static(
-            "[bold #e8a020][↑↓][/bold #e8a020][white] navigate  [/white]"
-            "[bold #e8a020][[enter]][/bold #e8a020][white] mark done  [/white]"
-            "[bold #e8a020][1-9][/bold #e8a020][white] quick mark  [/white]"
-            "[bold #e8a020][[a]][/bold #e8a020][white] add  [/white]"
-            "[bold #e8a020][[r]][/bold #e8a020][white] remove  [/white]"
-            "[bold #e8a020][[q]][/bold #e8a020][white] back[/white]",
-            classes="sub-hint",
-        )
-
-    def on_mount(self) -> None:
-        self._mode = None
-        table = self.query_one("#habits-table", DataTable)
-        table.can_focus = True
-        self._populate_table()
-        table.focus()
-
-    def _populate_table(self) -> None:
-        table = self.query_one("#habits-table", DataTable)
-        table.clear(columns=True)
-        table.add_columns("#", "Habit", "Today", "Streak")
-        try:
-            data = load_habits()
-            if not data["habits"]:
-                self.query_one("#habits-msg", Static).update(
-                    Text("No habits yet.  [a] to add one.", style="dim #5f87af")
-                )
-                return
-            shortcut = 1
-            for i, habit in enumerate(data["habits"]):
-                dates = data["logs"].get(habit, [])
-                done = is_done_today(dates)
-                streak = calculate_streak(dates)
-                if done:
-                    num_cell = Text("✓", style="bold #00c040")
-                else:
-                    num_cell = Text(str(shortcut), style="bold #e8a020") if shortcut <= 9 else Text("·", style="dim")
-                    shortcut += 1
-                today_cell = Text("✓", style="bold #00c040") if done else Text("—", style="dim")
-                streak_cell = Text(f"{streak}d", style="#e8a020" if streak > 0 else "dim")
-                table.add_row(num_cell, habit, today_cell, streak_cell, key=str(i))
-        except Exception as e:
-            self.query_one("#habits-msg", Static).update(
-                Text(f"Error loading habits: {e}", style="bold #c03040")
-            )
-
-    def _mark_habit_at_index(self, full_idx: int) -> None:
-        try:
-            data = load_habits()
-            habits = data["habits"]
-            if 0 <= full_idx < len(habits):
-                habit = habits[full_idx]
-                success = mark_done(data, habit)
-                if success:
-                    invalidate_context_cache()
-                msg = self.query_one("#habits-msg", Static)
-                if success:
-                    msg.update(Text(f"{habit} marked done!", style="bold #00c040"))
-                else:
-                    msg.update(Text(f"{habit} already done today.", style="bold #c03040"))
-                self._populate_table()
-        except Exception:
-            try:
-                self.query_one("#habits-msg", Static).update(Text("Error saving habit.", style="bold #c03040"))
-            except Exception:
-                pass
-
-    def _incomplete_indices(self) -> list[int]:
-        """Return full list indices of habits not yet done today, in order."""
-        try:
-            data = load_habits()
-            return [
-                i for i, h in enumerate(data["habits"])
-                if not is_done_today(data["logs"].get(h, []))
-            ]
-        except Exception:
-            return []
-
-    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        if self._mode is not None:
-            return
-        try:
-            self._mark_habit_at_index(int(event.row_key.value))
-        except Exception:
-            pass
-
-    def on_key(self, event: events.Key) -> None:
-        if self._mode is not None:
-            return
-        if event.character and event.character.isdigit() and event.character != "0":
-            event.stop()
-            shortcut_idx = int(event.character) - 1  # 0-based shortcut position
-            incomplete = self._incomplete_indices()
-            if 0 <= shortcut_idx < len(incomplete):
-                self._mark_habit_at_index(incomplete[shortcut_idx])
-
-    def action_add_mode(self) -> None:
-        self._mode = "add"
-        inp = self.query_one("#habit-input", Input)
-        inp.placeholder = "New habit name…"
-        inp.remove_class("hidden")
-        inp.focus()
-
-    def action_remove_mode(self) -> None:
-        self._mode = "remove"
-        inp = self.query_one("#habit-input", Input)
-        inp.placeholder = "Habit # to remove…"
-        inp.remove_class("hidden")
-        inp.focus()
-
-    def action_cancel_input(self) -> None:
-        self._mode = None
-        inp = self.query_one("#habit-input", Input)
-        inp.add_class("hidden")
-        inp.value = ""
-
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        value = event.value.strip()
-        msg = self.query_one("#habits-msg", Static)
-        try:
-            data = load_habits()
-            habits = data["habits"]
-            if self._mode == "add":
-                if not value:
-                    msg.update(Text("Name cannot be empty.", style="bold #c03040"))
-                elif value in habits:
-                    msg.update(Text(f"{value} already exists.", style="bold #c03040"))
-                else:
-                    data["habits"].append(value)
-                    data["logs"].setdefault(value, [])
-                    save_habits(data)
-                    invalidate_context_cache()
-                    msg.update(Text(f"{value} added.", style="bold #00c040"))
-            elif self._mode == "remove":
-                if value.isdigit():
-                    idx = int(value) - 1
-                    if 0 <= idx < len(habits):
-                        removed = habits.pop(idx)
-                        save_habits(data)
-                        invalidate_context_cache()
-                        msg.update(Text(f"{removed} removed.", style="bold #00c040"))
-                    else:
-                        msg.update(Text("Invalid habit number.", style="bold #c03040"))
-                else:
-                    msg.update(Text("Enter a habit number.", style="bold #c03040"))
-        except Exception:
-            msg.update(Text("Error updating habits.", style="bold #c03040"))
-        self.action_cancel_input()
-        self._populate_table()
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Tasks screen
@@ -1004,6 +855,8 @@ class MusicScreen(Screen):
     BINDINGS = [
         ("q", "app.pop_screen", "Back"),
         ("a", "add_mode", "Add"),
+        ("w", "mark_written", "Written"),
+        ("b", "change_bg", "Bg Song"),
         ("escape", "cancel_input", "Cancel"),
     ]
 
@@ -1013,10 +866,13 @@ class MusicScreen(Screen):
         with Horizontal(id="music-inputs", classes="hidden"):
             yield Input(id="music-title-in", placeholder="Song title…")
             yield Input(id="music-vibe-in", placeholder="Vibe / mood…")
+        yield Input(id="music-bg-in", placeholder="Audio file path (e.g. vicecity.m4a)…", classes="hidden")
         yield Static("", id="music-msg", classes="sub-msg")
         yield Static(
-            "[bold #e8a020][#][/bold #e8a020][white] view detail  [/white]"
+            "[bold #e8a020][1-9][/bold #e8a020][white] detail  [/white]"
             "[bold #e8a020][[a]][/bold #e8a020][white] add  [/white]"
+            "[bold #e8a020][[w]][/bold #e8a020][white] written  [/white]"
+            "[bold #e8a020][[b]][/bold #e8a020][white] bg song  [/white]"
             "[bold #e8a020][[q]][/bold #e8a020][white] back[/white]",
             classes="sub-hint",
         )
@@ -1050,6 +906,30 @@ class MusicScreen(Screen):
             )
 
     def on_key(self, event: events.Key) -> None:
+        msg = self.query_one("#music-msg", Static)
+        if self._mode == "written":
+            if event.key == "escape":
+                self._mode = None
+                msg.update(Text(""))
+                return
+            if event.character and event.character.isdigit() and event.character != "0":
+                event.stop()
+                idx = int(event.character) - 1
+                try:
+                    ideas = load_ideas()
+                    if 0 <= idx < len(ideas):
+                        ideas[idx]["song"] = None if ideas[idx].get("song") else "✓"
+                        save_ideas(ideas)
+                        title = ideas[idx]["title"]
+                        state = "written ✓" if ideas[idx]["song"] else "unwritten"
+                        msg.update(Text(f"'{title}' marked as {state}.", style="bold #00c040"))
+                        self._populate_table()
+                    else:
+                        msg.update(Text(f"Enter 1–{len(ideas)}.", style="bold #c03040"))
+                except Exception:
+                    pass
+                self._mode = None
+            return
         if self._mode is not None:
             return
         if event.character and event.character.isdigit() and event.character != "0":
@@ -1065,13 +945,32 @@ class MusicScreen(Screen):
                     detail.append(f"  added {idea.get('timestamp', '')}", style="dim #2a3a5a")
                     if idea.get("song"):
                         detail.append(f"\n{idea['song']}", style="italic #008b8b")
-                    self.query_one("#music-msg", Static).update(detail)
+                    msg.update(detail)
                 else:
-                    self.query_one("#music-msg", Static).update(
-                        Text(f"Enter 1–{len(ideas)}.", style="bold #c03040")
-                    )
+                    msg.update(Text(f"Enter 1–{len(ideas)}.", style="bold #c03040"))
             except Exception:
                 pass
+
+    def action_mark_written(self) -> None:
+        if self._mode is not None:
+            return
+        ideas = load_ideas()
+        if not ideas:
+            self.query_one("#music-msg", Static).update(Text("No ideas to mark.", style="dim"))
+            return
+        self._mode = "written"
+        self.query_one("#music-msg", Static).update(
+            Text(f"Press [1-{len(ideas)}] to toggle written  ·  [Esc] cancel", style="dim #e8a020")
+        )
+
+    def action_change_bg(self) -> None:
+        if self._mode is not None:
+            return
+        self._mode = "bg"
+        inp = self.query_one("#music-bg-in", Input)
+        inp.value = ""
+        inp.remove_class("hidden")
+        inp.focus()
 
     def action_add_mode(self) -> None:
         self._mode = "title"
@@ -1090,9 +989,24 @@ class MusicScreen(Screen):
         self.query_one("#music-inputs").add_class("hidden")
         self.query_one("#music-title-in", Input).value = ""
         self.query_one("#music-vibe-in", Input).value = ""
+        try:
+            bg_in = self.query_one("#music-bg-in", Input)
+            bg_in.add_class("hidden")
+            bg_in.value = ""
+        except Exception:
+            pass
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         msg = self.query_one("#music-msg", Static)
+        if event.input.id == "music-bg-in":
+            path = event.value.strip()
+            inp = self.query_one("#music-bg-in", Input)
+            inp.add_class("hidden")
+            inp.value = ""
+            self._mode = None
+            if path:
+                self.app._change_bg_music(path, msg)
+            return
         if self._mode == "title":
             value = event.value.strip()
             if not value:
@@ -1121,332 +1035,7 @@ class MusicScreen(Screen):
             self._populate_table()
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Portfolio screen
-# ══════════════════════════════════════════════════════════════════════════════
 
-class PortfolioScreen(Screen):
-    BINDINGS = [
-        ("q", "app.pop_screen", "Back"),
-        ("a", "add_mode", "Add"),
-        ("e", "edit_mode", "Edit"),
-        ("r", "remove_mode", "Remove"),
-        ("g", "goals_mode", "Goals"),
-        ("escape", "cancel_input", "Cancel"),
-    ]
-
-    _TIERS = ["S+", "S", "A", "B", "C", "D", "F"]
-
-    def compose(self) -> ComposeResult:
-        yield Static("[bold white]═══  PORTFOLIO  ═══[/bold white]", classes="sub-title")
-        yield Static("", id="port-goals")
-        with ScrollableContainer(id="port-rows"):
-            yield Static("", id="port-content")
-        yield Input(placeholder="", id="port-input", classes="hidden")
-        yield Static("", id="port-msg", classes="sub-msg")
-        yield Static(
-            "[bold #e8a020][[a]][/bold #e8a020][white] add  [/white]"
-            "[bold #e8a020][[e]][/bold #e8a020][white] edit  [/white]"
-            "[bold #e8a020][[r]][/bold #e8a020][white] remove  [/white]"
-            "[bold #e8a020][[g]][/bold #e8a020][white] goals  [/white]"
-            "[bold #e8a020][[q]][/bold #e8a020][white] back[/white]",
-            classes="sub-hint",
-        )
-
-    def on_mount(self) -> None:
-        self._mode: str | None = None
-        self._pending: dict = {}
-        self._edit_idx: int | None = None
-
-    def on_show(self) -> None:
-        self._populate_table()
-
-    def _populate_table(self) -> None:
-        from rich.console import Group as RichGroup
-        try:
-            portfolio = load_portfolio()
-            goals = portfolio.get("goals", [])
-            goals_str = "  ·  ".join(goals) if goals else "no goals — press [g] to add"
-            try:
-                self.query_one("#port-goals", Static).update(
-                    Text(f"Goals: {goals_str}", style="dim #4a9eff")
-                )
-            except Exception:
-                pass
-
-            holdings = portfolio.get("holdings", [])
-            msg = self.query_one("#port-msg", Static)
-            content_w = self.query_one("#port-content", Static)
-
-            if not holdings:
-                content_w.update(Text("No positions yet — press [a] to add one.", style="dim #2a3a5a"))
-                msg.update(Text(""))
-                return
-
-            rows = calculate_weights(holdings)
-            total = sum(r["value"] for r in rows)
-
-            # Bar fills available width: screen width minus indent (2) and pct label (8)
-            bar_width = max(20, (self.size.width or 110) - 12)
-
-            blocks: list[Text] = []
-            for i, r in enumerate(rows, 1):
-                w = r["weight"]
-                pnl_pct = safe_pnl(r["current_price"], r["avg_cost"])
-                up = pnl_pct >= 0
-                tier = r.get("tier", "?")
-                tier_style = TIER_STYLES.get(tier, "white")
-                al_label, _ = check_alignment(r.get("sector", ""), goals)
-                if "Strong" in al_label:
-                    dot, dot_style = "●", "bold #00c040"
-                elif "Partial" in al_label:
-                    dot, dot_style = "◑", "bold #e8a020"
-                else:
-                    dot, dot_style = "○", "dim #c03040"
-
-                # ── info line ──────────────────────────────────────────
-                t = Text()
-                t.append(f"  {r['ticker']:<6}", style="bold white")
-                name = r.get("name", r["ticker"])[:20]
-                t.append(f"{name:<22}", style="dim #5f87af")
-                sector = r.get("sector", "?")[:10]
-                t.append(f"{sector:<12}", style="dim #4a5568")
-                t.append(f"{tier:<5}", style=tier_style)
-                t.append(f"{pnl_pct:+.1f}%{'↑' if up else '↓'}",
-                         style="bold #00c040" if up else "bold #c03040")
-                t.append("  ")
-                t.append(dot, style=dot_style)
-
-                # ── allocation bar (full-width, transparent feel) ───────
-                pct_str  = f" {w * 100:.1f}%"
-                bar_usable = bar_width - len(pct_str)  # reserve right edge for label
-                filled = max(1, round(w * bar_usable))
-                empty  = bar_usable - filled
-                t.append("\n  ")
-                t.append("▓" * filled, style="#1a4a7a")
-                t.append("░" * empty,  style="#091520")
-                t.append(pct_str, style="bold #4a9eff")  # flush at right edge of bar
-
-                blocks.append(t)
-
-            content_w.update(RichGroup(*[b for block in blocks for b in (block, Text(""))]))
-            msg.update(Text(f"${total:,.2f} total  ·  {len(rows)} position{'s' if len(rows) != 1 else ''}",
-                            style="dim #5f87af"))
-        except Exception:
-            try:
-                self.query_one("#port-msg", Static).update(Text("Portfolio unavailable.", style="dim"))
-            except Exception:
-                pass
-
-    def _set_input(self, placeholder: str) -> None:
-        inp = self.query_one("#port-input", Input)
-        inp.placeholder = placeholder
-        inp.value = ""
-        inp.remove_class("hidden")
-        inp.focus()
-
-    def action_add_mode(self) -> None:
-        self._mode = "ticker"
-        self._pending = {}
-        self._set_input("Ticker (e.g. AAPL)…")
-
-    def action_edit_mode(self) -> None:
-        self._mode = "edit_ticker"
-        self._edit_idx = None
-        self._set_input("Ticker to edit (e.g. AAPL)…")
-
-    def action_remove_mode(self) -> None:
-        self._mode = "remove"
-        self._set_input("Ticker to remove (e.g. AAPL)…")
-
-    def action_goals_mode(self) -> None:
-        self._mode = "goals"
-        self._set_input("Goals (comma separated)…")
-
-    def action_cancel_input(self) -> None:
-        self._mode = None
-        self._pending = {}
-        self._edit_idx = None
-        inp = self.query_one("#port-input", Input)
-        inp.add_class("hidden")
-        inp.value = ""
-
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        value = event.value.strip()
-        msg = self.query_one("#port-msg", Static)
-
-        if self._mode == "goals":
-            if value:
-                try:
-                    portfolio = load_portfolio()
-                    portfolio["goals"] = [g.strip() for g in value.split(",") if g.strip()]
-                    save_portfolio(portfolio)
-                    invalidate_context_cache()
-                    msg.update(Text("Goals updated.", style="bold #00c040"))
-                except Exception:
-                    msg.update(Text("Error saving goals.", style="bold #c03040"))
-            self.action_cancel_input()
-            self._populate_table()
-            return
-
-        if self._mode == "remove":
-            ticker = value.upper()
-            try:
-                portfolio = load_portfolio()
-                holdings = portfolio["holdings"]
-                idx = next((i for i, h in enumerate(holdings) if h["ticker"] == ticker), None)
-                if idx is not None:
-                    removed = holdings.pop(idx)
-                    save_portfolio(portfolio)
-                    invalidate_context_cache()
-                    msg.update(Text(f"{removed['ticker']} removed.", style="bold #00c040"))
-                else:
-                    names = "  ".join(h["ticker"] for h in holdings)
-                    msg.update(Text(f"Not found. Holdings: {names}", style="bold #c03040"))
-            except Exception:
-                msg.update(Text("Error removing position.", style="bold #c03040"))
-            self.action_cancel_input()
-            self._populate_table()
-            return
-
-        if self._mode == "edit_ticker":
-            ticker = value.upper()
-            try:
-                portfolio = load_portfolio()
-                holdings = portfolio["holdings"]
-                idx = next((i for i, h in enumerate(holdings) if h["ticker"] == ticker), None)
-                if idx is not None:
-                    self._edit_idx = idx
-                    h = holdings[idx]
-                    msg.update(Text(
-                        f"{h['ticker']}: shares={h['shares']}  cost={h['avg_cost']}  tier={h.get('tier','?')}",
-                        style="dim #5f87af",
-                    ))
-                    self._mode = "edit_field"
-                    self._set_input("Field: shares / cost / tier")
-                else:
-                    names = "  ".join(h["ticker"] for h in holdings)
-                    msg.update(Text(f"Not found. Holdings: {names}", style="bold #c03040"))
-            except Exception:
-                msg.update(Text("Error.", style="bold #c03040"))
-            return
-
-        if self._mode == "edit_field":
-            field = value.lower()
-            if field not in ("shares", "cost", "tier"):
-                msg.update(Text("Enter: shares, cost, or tier", style="bold #c03040"))
-                return
-            self._mode = f"edit_{field}"
-            prompts = {
-                "shares": "New shares…",
-                "cost": "New avg cost ($)…",
-                "tier": f"New tier ({'/'.join(self._TIERS)})…",
-            }
-            self._set_input(prompts[field])
-            return
-
-        if self._mode in ("edit_shares", "edit_cost"):
-            try:
-                float(value)
-            except ValueError:
-                msg.update(Text("Enter a number.", style="bold #c03040"))
-                return
-            try:
-                portfolio = load_portfolio()
-                key = "shares" if self._mode == "edit_shares" else "avg_cost"
-                portfolio["holdings"][self._edit_idx][key] = float(value)
-                save_portfolio(portfolio)
-                invalidate_context_cache()
-                msg.update(Text("Position updated.", style="bold #00c040"))
-            except Exception:
-                msg.update(Text("Error updating.", style="bold #c03040"))
-            self.action_cancel_input()
-            self._populate_table()
-            return
-
-        if self._mode == "edit_tier":
-            tier = value.upper()
-            if tier not in self._TIERS:
-                msg.update(Text(f"Tier must be one of: {', '.join(self._TIERS)}", style="bold #c03040"))
-                return
-            try:
-                portfolio = load_portfolio()
-                portfolio["holdings"][self._edit_idx]["tier"] = tier
-                save_portfolio(portfolio)
-                invalidate_context_cache()
-                msg.update(Text("Tier updated.", style="bold #00c040"))
-            except Exception:
-                msg.update(Text("Error updating.", style="bold #c03040"))
-            self.action_cancel_input()
-            self._populate_table()
-            return
-
-        if self._mode == "ticker":
-            if not value:
-                msg.update(Text("Ticker cannot be empty.", style="bold #c03040"))
-                return
-            ticker = value.upper()
-            self._pending["ticker"] = ticker
-            known = next((s for s in STOCKS if s["ticker"] == ticker), None)
-            if known:
-                self._pending["sector"] = known["sector"]
-                self._pending["name"] = known["name"]
-            else:
-                self._pending["sector"] = "Unknown"
-                self._pending["name"] = ticker
-            self._mode = "shares"
-            self._set_input("Shares owned…")
-
-        elif self._mode == "shares":
-            try:
-                float(value)
-            except ValueError:
-                msg.update(Text("Enter a number for shares.", style="bold #c03040"))
-                return
-            self._pending["shares"] = float(value)
-            self._mode = "cost"
-            self._set_input("Avg cost per share ($)…")
-
-        elif self._mode == "cost":
-            try:
-                cost = float(value)
-                if cost <= 0:
-                    raise ValueError
-            except ValueError:
-                msg.update(Text("Enter a cost greater than 0.", style="bold #c03040"))
-                return
-            self._pending["avg_cost"] = cost
-            self._mode = "tier"
-            tiers = "/".join(self._TIERS)
-            self._set_input(f"Tier ({tiers})…")
-
-        elif self._mode == "tier":
-            tier = value.upper()
-            if tier not in self._TIERS:
-                msg.update(Text(f"Tier must be one of: {', '.join(self._TIERS)}", style="bold #c03040"))
-                return
-            self._pending["tier"] = tier
-            try:
-                portfolio = load_portfolio()
-                ticker = self._pending["ticker"]
-                portfolio["holdings"].append({
-                    "ticker": ticker,
-                    "name": self._pending.get("name", ticker),
-                    "sector": self._pending.get("sector", "Unknown"),
-                    "shares": self._pending["shares"],
-                    "avg_cost": self._pending["avg_cost"],
-                    "tier": tier,
-                })
-                save_portfolio(portfolio)
-                invalidate_context_cache()
-                msg.update(Text(f"{ticker} added.", style="bold #00c040"))
-            except Exception:
-                msg.update(Text("Error saving position.", style="bold #c03040"))
-            self.action_cancel_input()
-            self._populate_table()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
 # Game screen
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -1461,126 +1050,59 @@ class GameScreen(Screen):
         self._name = name
 
     def compose(self) -> ComposeResult:
+        yield Static("[bold white]═══  STOCK GUESSER  ═══[/bold white]", classes="sub-title")
+        yield Static("", id="game-body")
         yield Static(
-            "[bold white]STOCK GUESSER[/bold white]\n\n[dim #5f87af]"
-            "Press [bold white]Enter[/bold white] to launch game  ·  "
-            "[bold white]q[/bold white] to go back[/dim #5f87af]",
-            id="game-prompt",
+            "[bold #e8a020][[enter]][/bold #e8a020][white] launch game  [/white]"
+            "[bold #e8a020][[q]][/bold #e8a020][white] back[/white]",
+            classes="sub-hint",
         )
+
+    def on_show(self) -> None:
+        self._render_splash()
+
+    def _render_splash(self) -> None:
+        from stocks import STOCKS, PRICES_AS_OF
+        t = Text()
+        t.append("\n  STOCK GUESSER\n\n", style="bold #e8a020")
+        t.append("  Guess the price of a random stock to within 5% to win.\n", style="dim #5f87af")
+        t.append(f"  {len(STOCKS)} stocks in the pool  ·  prices approximate as of {PRICES_AS_OF}\n\n",
+                 style="dim #2a3a5a")
+        t.append("  Scoring\n", style="bold #4a9eff")
+        t.append("  1 attempt  →  perfect\n", style="dim #5f87af")
+        t.append("  2–3 attempts  →  solid read\n", style="dim #5f87af")
+        t.append("  4+ attempts  →  keep studying\n\n", style="dim #5f87af")
+        t.append("  Press ", style="dim #5f87af")
+        t.append("[enter]", style="bold white")
+        t.append(" to start", style="dim #5f87af")
+        try:
+            self.query_one("#game-body", Static).update(t)
+        except Exception:
+            pass
 
     def action_launch(self) -> None:
         try:
             with self.app.suspend():
                 play_game(self._name)
+            self._render_splash()
         except Exception as e:
-            self.query_one("#game-prompt", Static).update(
-                f"[bold #c03040]Game error: {e}[/bold #c03040]\n\n"
-                "[dim #5f87af]Press [bold white]q[/bold white] to go back[/dim #5f87af]"
-            )
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Shared context builder — used by BotsScreen and morning brief
-# ══════════════════════════════════════════════════════════════════════════════
-
-_ctx_cache: dict = {}
-_ctx_cache_time: "datetime | None" = None
-_CTX_CACHE_TTL = 30  # seconds — data doesn't change mid-conversation
+            t = Text()
+            t.append(f"\n  Game error: {e}\n\n", style="bold #c03040")
+            t.append("  Press ", style="dim #5f87af")
+            t.append("[q]", style="bold white")
+            t.append(" to go back.", style="dim #5f87af")
+            try:
+                self.query_one("#game-body", Static).update(t)
+            except Exception:
+                pass
 
 
 def invalidate_context_cache() -> None:
-    """Call after any data write so the next NEON call sees fresh state."""
-    global _ctx_cache_time
-    _ctx_cache_time = None
+    _ctx_mod.invalidate_context_cache()
 
 
 def _build_neon_context() -> dict:
-    global _ctx_cache, _ctx_cache_time
-    now = datetime.now()
-    if _ctx_cache_time and (now - _ctx_cache_time).total_seconds() < _CTX_CACHE_TTL:
-        return _ctx_cache
-
-    ctx: dict = {}
-    try:
-        data = load_habits()
-        habits = data["habits"]
-        logs = data["logs"]
-        ctx["habits_done"]  = sum(1 for h in habits if is_done_today(logs.get(h, [])))
-        ctx["habits_total"] = len(habits)
-        ctx["habits_list"]  = habits[:8]
-        today_dt = datetime.now().date()
-        last_30  = {(today_dt - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(30)}
-        last_14  = {(today_dt - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(14)}
-        prior_14 = {(today_dt - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(14, 28)}
-        trend_data = []
-        for h in habits:
-            log_set = set(logs.get(h, []))
-            days_30 = len(log_set & last_30)
-            recent  = len(log_set & last_14)
-            prior   = len(log_set & prior_14)
-            trend   = "↑" if recent > prior else ("↓" if recent < prior else "→")
-            trend_data.append({"habit": h, "pct_30": round(days_30 / 30 * 100), "days_30": days_30, "trend": trend})
-        ctx["habit_trends"] = trend_data
-        if trend_data:
-            ctx["habit_avg_30"] = round(
-                sum(t["days_30"] for t in trend_data) / (len(trend_data) * 30) * 100
-            )
-    except Exception:
-        pass
-    try:
-        tasks = load_tasks()
-        remaining = [t["name"] for t in tasks if not t["done"]]
-        ctx["tasks_remaining"] = len(remaining)
-        ctx["tasks_open"] = remaining[:5]
-        ctx["tasks_done_count"] = sum(1 for t in tasks if t["done"])
-    except Exception:
-        pass
-    try:
-        meta = get_notes_meta()
-        ctx["notes_count"] = meta.get("count", 0)
-    except Exception:
-        pass
-    try:
-        portfolio = load_portfolio()
-        holdings = portfolio.get("holdings", [])
-        if holdings:
-            rows = calculate_weights(holdings)
-            total = sum(r["value"] for r in rows)
-            ctx["portfolio_value"] = round(total, 2)
-            ctx["portfolio_positions"] = len(rows)
-            ctx["portfolio_top"] = [
-                {
-                    "ticker": r["ticker"],
-                    "shares": r.get("shares", 0),
-                    "weight": round(r["weight"] * 100, 1),
-                    "pnl": round(safe_pnl(r["current_price"], r["avg_cost"]), 1),
-                }
-                for r in rows[:4]
-            ]
-            changes = cached_changes()
-            movers = [
-                {"ticker": h["ticker"], "change": changes[h["ticker"]]}
-                for h in holdings
-                if h["ticker"] in changes
-            ]
-            if movers:
-                ctx["price_movers"] = sorted(movers, key=lambda x: abs(x["change"]), reverse=True)
-    except Exception:
-        pass
-    try:
-        ideas = load_ideas()
-        if ideas:
-            ctx["music_count"] = len(ideas)
-            ctx["music_ideas"] = [
-                {"title": i["title"], "vibe": i.get("vibe", "")}
-                for i in ideas
-            ]
-    except Exception:
-        pass
-
-    _ctx_cache = ctx
-    _ctx_cache_time = now
-    return ctx
+    return _ctx_mod.build_context_dict()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1713,12 +1235,17 @@ class BotsScreen(Screen):
         h = watcher.health
         calls = mem.calls_today if mem else 0
         limit = bot.persona.get("daily_call_limit", 50) if bot else 50
+        muted = getattr(self.app, "_music_muted", False)
         bar = Text(justify="center")
         bar.append("WATCHER  ", style="dim #2a3a5a")
         for label, ok in [("API", h.anthropic_api), ("MEM", h.memory_layer), ("♪", h.music_system), ("BOT", h.bot_online)]:
-            color = "#00c040" if ok else "#c03040"
-            bar.append("● " if ok else "○ ", style=f"bold {color}")
-            bar.append(f"{label}  ", style=f"dim {color}")
+            if label == "♪" and muted:
+                bar.append("✕ ", style="bold #c03040")
+                bar.append(f"{label}  ", style="dim #c03040")
+            else:
+                color = "#00c040" if ok else "#c03040"
+                bar.append("● " if ok else "○ ", style=f"bold {color}")
+                bar.append(f"{label}  ", style=f"dim {color}")
         api_color = "#c03040" if calls >= limit else ("#e8a020" if calls >= limit * 0.8 else "#2a3a5a")
         bar.append(f"CALLS:{calls}/{limit}  ", style=f"dim {api_color}")
         insp = getattr(self, "_insp_count", 0)
@@ -2046,6 +1573,15 @@ class BotsScreen(Screen):
             self._refresh_watcher()
             self._update_bot_widget()
         else:
+            if current + 1 >= 4 and not getattr(self.app, "is_admin", False):
+                try:
+                    self.query_one("#pending-hint", Static).update(
+                        Text("Trust L4+ requires admin access.", style="bold #c03040")
+                    )
+                except Exception:
+                    pass
+                self.set_timer(2, self._refresh_pending_display)
+                return
             self._trust_pending = "+1"
             try:
                 self.query_one("#pending-hint", Static).update(
@@ -2296,7 +1832,8 @@ class SecurityScreen(Screen):
         ("s", "scan", "Scan"),
         ("t", "request_trash", "Empty Trash"),
         ("d", "request_desktop", "Archive Desktop"),
-        ("k", "check_key", "Rotate Key"),
+        ("k", "check_key", "Key Age"),
+        ("r", "rotate_key", "Rotate Key"),
         ("y", "confirm_action", "Confirm"),
         ("n", "cancel_action", "Cancel"),
     ]
@@ -2307,6 +1844,7 @@ class SecurityScreen(Screen):
         yield Static("", id="sec-ports")
         yield Static("", id="sec-maint")
         yield Static("", id="sec-msg", classes="sub-msg")
+        yield Input(id="sec-key-input", placeholder="Paste new ANTHROPIC_API_KEY…", classes="hidden")
         yield Static("", id="sec-hint", classes="sub-hint")
 
     def on_mount(self) -> None:
@@ -2314,7 +1852,11 @@ class SecurityScreen(Screen):
         self._pending_action: str | None = None
         self._scan_timer = None
         self._refresh_hint()
-        self._run_scan()
+        checks, ports, ts = security.load_scan_cache()
+        if checks is not None:
+            self._display_cached(checks, ports, ts)
+        if security.cache_age_hours() > 24:
+            self._run_scan()
 
     def on_hide(self) -> None:
         if self._scan_timer is not None:
@@ -2322,20 +1864,73 @@ class SecurityScreen(Screen):
             self._scan_timer = None
 
     def on_show(self) -> None:
-        self._scan_timer = self.set_interval(30, self._run_scan)
-        self._run_scan()
+        self._scan_timer = self.set_interval(86400, self._run_scan)
+        checks, ports, ts = security.load_scan_cache()
+        if checks is not None:
+            self._display_cached(checks, ports, ts)
+        if security.cache_age_hours() > 24:
+            self._run_scan()
+
+    def _display_cached(self, checks, ports, ts, scanning: bool = False) -> None:
+        table = self.query_one("#sec-table", DataTable)
+        table.clear(columns=True)
+        table.add_columns("Check", "Status", "")
+        pass_count = 0
+        for label, status, is_good in checks:
+            if is_good:
+                pass_count += 1
+            status_text = Text(status, style="bold #00c040" if is_good else "bold #c03040")
+            indicator = Text("✓" if is_good else "✗", style="bold #00c040" if is_good else "bold #c03040")
+            table.add_row(label, status_text, indicator)
+
+        ports_widget = self.query_one("#sec-ports", Static)
+        port_line = ""
+        if ports:
+            port_list = "  ".join(str(p) for p in ports[:20])
+            overflow = f"  +{len(ports) - 20} more" if len(ports) > 20 else ""
+            port_line = f"Open ports: {port_list}{overflow}"
+        else:
+            port_line = "Open ports: none detected"
+        scan_age = ""
+        if ts:
+            try:
+                dt = datetime.fromisoformat(ts)
+                secs = int((datetime.now() - dt).total_seconds())
+                if secs < 3600:
+                    scan_age = f"{secs // 60}m ago"
+                elif secs < 86400:
+                    scan_age = f"{secs // 3600}h ago"
+                else:
+                    scan_age = f"{secs // 86400}d ago"
+                port_line += f"\nLast scan: {scan_age}"
+            except Exception:
+                pass
+        ports_widget.update(Text(port_line, style="dim #5f87af"))
+
+        total = len(checks)
+        key_count = security.count_api_keys()
+        color = "#00c040" if pass_count == total else ("#e8a020" if pass_count >= total // 2 else "#c03040")
+        if not self._pending_action:
+            key_str = f"  ·  {key_count} API key{'s' if key_count != 1 else ''}"
+            scan_note = "  ·  scanning…" if scanning else ""
+            self.query_one("#sec-msg", Static).update(
+                Text(f"{pass_count}/{total} checks passed{key_str}{scan_note}", style=f"bold {color}")
+            )
 
     def _refresh_hint(self) -> None:
         try:
             w = self.query_one("#sec-hint", Static)
-            if self._pending_action:
+            if self._pending_action == "rotate_key":
+                w.update(Text("[Enter] save    [n] cancel", style="bold #e8a020"))
+            elif self._pending_action:
                 w.update(Text("[y] confirm    [n] cancel", style="bold #c03040"))
             else:
                 w.update(
                     "[dim #e8a020][[s]][/dim #e8a020][dim #5f87af] scan  [/dim #5f87af]"
                     "[dim #e8a020][[t]][/dim #e8a020][dim #5f87af] trash  [/dim #5f87af]"
                     "[dim #e8a020][[d]][/dim #e8a020][dim #5f87af] desktop  [/dim #5f87af]"
-                    "[dim #e8a020][[k]][/dim #e8a020][dim #5f87af] key  [/dim #5f87af]"
+                    "[dim #e8a020][[k]][/dim #e8a020][dim #5f87af] key age  [/dim #5f87af]"
+                    "[dim #e8a020][[r]][/dim #e8a020][dim #5f87af] rotate  [/dim #5f87af]"
                     "[dim #e8a020][[q]][/dim #e8a020][dim #5f87af] back[/dim #5f87af]"
                 )
         except Exception:
@@ -2371,6 +1966,37 @@ class SecurityScreen(Screen):
             security.open_key_rotation()
         self.query_one("#sec-msg", Static).update(t)
 
+    def action_rotate_key(self) -> None:
+        if self._pending_action:
+            return
+        self._pending_action = "rotate_key"
+        self.query_one("#sec-msg", Static).update(
+            Text("Paste new ANTHROPIC_API_KEY and press Enter:", style="bold #e8a020")
+        )
+        inp = self.query_one("#sec-key-input", Input)
+        inp.value = ""
+        inp.remove_class("hidden")
+        inp.focus()
+        self._refresh_hint()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id != "sec-key-input":
+            return
+        new_key = event.value.strip()
+        inp = self.query_one("#sec-key-input", Input)
+        inp.add_class("hidden")
+        inp.value = ""
+        self._pending_action = None
+        self._refresh_hint()
+        if not new_key:
+            return
+        ok, result = security.update_api_key(new_key)
+        color = "#00c040" if ok else "#c03040"
+        self.query_one("#sec-msg", Static).update(Text(result, style=f"bold {color}"))
+        watcher = getattr(self.app, "_watcher", None)
+        if watcher:
+            watcher.check_health(getattr(self.app, "_bot", None))
+
     def action_confirm_action(self) -> None:
         if not self._pending_action:
             return
@@ -2381,6 +2007,12 @@ class SecurityScreen(Screen):
 
     def action_cancel_action(self) -> None:
         self._pending_action = None
+        try:
+            inp = self.query_one("#sec-key-input", Input)
+            inp.add_class("hidden")
+            inp.value = ""
+        except Exception:
+            pass
         self.query_one("#sec-msg", Static).update(Text(""))
         self._refresh_hint()
 
@@ -2401,7 +2033,6 @@ class SecurityScreen(Screen):
         color = "#00c040" if ok else "#c03040"
         msg_w.update(Text(result, style=f"bold {color}"))
 
-        # Ask NEON to observe the result (trust level gated)
         bot: Bot | None = getattr(self.app, "_bot", None)
         if bot and bot.trust_level >= 1:
             commentary = await asyncio.to_thread(
@@ -2414,39 +2045,39 @@ class SecurityScreen(Screen):
     @work(exclusive=True)
     async def _run_scan(self) -> None:
         import asyncio
-        msg = self.query_one("#sec-msg", Static)
-        if not self._pending_action:
-            msg.update(Text("Scanning…", style="dim #e8a020"))
+        checks_cached, ports_cached, ts_cached = security.load_scan_cache()
+        if checks_cached is not None:
+            self._display_cached(checks_cached, ports_cached, ts_cached, scanning=True)
+        elif not self._pending_action:
+            self.query_one("#sec-msg", Static).update(Text("Scanning…", style="dim #e8a020"))
 
         checks, ports = await asyncio.gather(
             asyncio.to_thread(security.run_checks),
             asyncio.to_thread(security.get_open_ports),
         )
 
-        table = self.query_one("#sec-table", DataTable)
-        table.clear(columns=True)
-        table.add_columns("Check", "Status", "")
+        if not checks and _SYSTEM != "Darwin":
+            table = self.query_one("#sec-table", DataTable)
+            table.clear(columns=True)
+            table.add_columns("Notice", "")
+            table.add_row(
+                Text("macOS security checks not available on this platform.", style="dim #5f87af"),
+                Text(""),
+            )
+            ports_widget = self.query_one("#sec-ports", Static)
+            if ports:
+                port_list = "  ".join(str(p) for p in ports[:20])
+                ports_widget.update(Text(f"Open ports: {port_list}", style="dim #5f87af"))
+            else:
+                ports_widget.update(Text("Open ports: none detected", style="dim #00c040"))
+            key_count = security.count_api_keys()
+            self.query_one("#sec-msg", Static).update(
+                Text(f"Port scan complete  ·  {key_count} API key{'s' if key_count != 1 else ''}", style="dim #5f87af")
+            )
+            return
 
-        pass_count = 0
-        for label, status, is_good in checks:
-            if is_good:
-                pass_count += 1
-            status_text = Text(status, style="bold #00c040" if is_good else "bold #c03040")
-            indicator = Text("✓" if is_good else "✗", style="bold #00c040" if is_good else "bold #c03040")
-            table.add_row(label, status_text, indicator)
-
-        ports_widget = self.query_one("#sec-ports", Static)
-        if ports:
-            port_list = "  ".join(str(p) for p in ports[:20])
-            overflow = f"  +{len(ports) - 20} more" if len(ports) > 20 else ""
-            ports_widget.update(Text(f"Open ports: {port_list}{overflow}", style="dim #5f87af"))
-        else:
-            ports_widget.update(Text("Open ports: none detected", style="dim #00c040"))
-
-        total = len(checks)
-        color = "#00c040" if pass_count == total else ("#e8a020" if pass_count >= total // 2 else "#c03040")
-        if not self._pending_action:
-            msg.update(Text(f"{pass_count}/{total} checks passed", style=f"bold {color}"))
+        security.save_scan_cache(checks, ports)
+        self._display_cached(checks, ports, datetime.now().isoformat(), scanning=False)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2462,11 +2093,12 @@ class DarkHourApp(App):
         self._music_muted = False
         self._current_song = ""
         self._morning_brief = None
+        config = load_config()
+        self.is_admin = config["is_admin"]
+        self._bg_music_path = config.get("bg_music", "")
         _boot_sound()
         self.set_timer(0.8, self._start_music)
         self.set_timer(2.5, self._run_morning_brief)
-        config = load_config()
-        self.is_admin = config["is_admin"]
         self._memory = MemoryManager()
         self._watcher = Watcher()
         self._bot = Bot(load_persona(), self._memory, self._watcher)
@@ -2489,9 +2121,11 @@ class DarkHourApp(App):
             pass
 
     def _start_music(self) -> None:
-        self._music_proc = _start_bg_music()
+        bg_path = getattr(self, "_bg_music_path", "")
+        self._music_proc = _start_bg_music(bg_path)
         if self._music_proc:
-            self._current_song = "VICE CITY"
+            name = os.path.splitext(os.path.basename(bg_path))[0].upper() if bg_path else ""
+            self._current_song = name or "VICE CITY"
         # Apply mute if the user pressed M during the 2s boot delay.
         # Use SIGKILL (not SIGSTOP) — CoreAudio drains its buffer after SIGSTOP on macOS.
         if self._music_muted and self._music_proc:
@@ -2501,6 +2135,40 @@ class DarkHourApp(App):
             except Exception:
                 pass
             self._music_proc = None
+
+    def _change_bg_music(self, path: str, msg_widget=None) -> None:
+        """Validate path, save to config, restart music. Callable from any screen."""
+        base = os.path.dirname(os.path.abspath(__file__))
+        if not os.path.isabs(path):
+            candidate = os.path.join(base, "assets", path)
+            resolved = candidate if os.path.exists(candidate) else os.path.join(base, path)
+        else:
+            resolved = path
+        if not os.path.exists(resolved):
+            if msg_widget:
+                msg_widget.update(Text(f"Not found: {path}", style="bold #c03040"))
+            return
+        from config import load_config as _lc, save_config as _sc
+        cfg = _lc()
+        cfg["bg_music"] = resolved
+        _sc(cfg)
+        self._bg_music_path = resolved
+        if not self._music_muted:
+            proc = self._music_proc
+            if proc and proc.poll() is None:
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except Exception:
+                    pass
+            self._music_proc = _start_bg_music(resolved)
+        name = os.path.splitext(os.path.basename(resolved))[0].upper()
+        self._current_song = name
+        try:
+            self.query_one(FooterControls).set_muted(self._music_muted, self._current_song)
+        except Exception:
+            pass
+        if msg_widget:
+            msg_widget.update(Text(f"Bg → {os.path.basename(resolved)}", style="bold #00c040"))
 
     def action_toggle_mute(self) -> None:
         self._music_muted = not self._music_muted

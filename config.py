@@ -32,14 +32,13 @@ DEFAULTS = {
     "theme": "cyan",
     "created": "",
     "is_admin": False,
+    "bg_music": "",
 }
 
 # Set DARK_HOUR_ADMIN=<your name> in .env to grant admin access.
-_ADMIN_PASSPHRASE = os.environ.get("DARK_HOUR_ADMIN", "")
-
-
 def _check_admin(config: dict) -> bool:
-    return config.get("name") == _ADMIN_PASSPHRASE
+    passphrase = os.environ.get("DARK_HOUR_ADMIN", "")
+    return bool(passphrase) and config.get("name") == passphrase
 
 
 def load_config():

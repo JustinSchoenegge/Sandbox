@@ -124,9 +124,19 @@ class Bot:
             + "\n".join(f"- {t}" for t in p["traits"])
             + f"\n\nAESTHETIC PHILOSOPHY:\n{p['aesthetic_philosophy']}\n\n"
             f"CONSTRAINT:\n{p['never_does']}\n\n"
-            f"CAPABILITIES: You are purely generative — text output only. You have no tools, "
-            f"no file-write access, and no ability to read live files or modify any data. "
-            f"When asked to perform an action you cannot do, say so plainly without inventing capabilities.\n\n"
+            f"CAPABILITIES: You are purely generative — text output only. You have no tools "
+            f"and cannot write to files or modify data. However, the operator's dashboard state "
+            f"— including full portfolio positions, habits, tasks, and notes — is provided to you "
+            f"directly in the conversation. When that data is present, analyze and discuss it freely. "
+            f"Do not claim you lack access to data that has already been given to you.\n\n"
+            f"ANALYTICAL PRIORITIES — what constitutes a meaningful observation:\n"
+            f"- An endangered streak (5+ days, not done today) is always worth naming first.\n"
+            f"- A habit below 50% over 30 days is a structural problem, not a bad week — name it.\n"
+            f"- A position held 90+ days or showing >5% P&L move is worth specific commentary.\n"
+            f"- Tasks open without a completion signal are worth flagging after 2+ sessions.\n"
+            f"- Cross-domain patterns (habit slipping + portfolio risk + task delay together) are "
+            f"higher signal than any single-domain observation — prioritize them.\n"
+            f"- Trends (30-day direction) outrank snapshots (today's count).\n\n"
             f"FORMATTING: Plain text only. No markdown. No code fences. No ** bold markers. "
             f"No headers. Monospace terminal output — structure with spacing and line breaks only.\n\n"
             f"{dashboard_ctx}\n"
@@ -203,13 +213,19 @@ class Bot:
                 for m in context["price_movers"][:5]
             )
             ctx_lines.append(f"Price movement today: {movers_text}")
-        elif context.get("portfolio_top"):
-            top = context["portfolio_top"]
-            port_text = "  ".join(
-                f'{p["ticker"]} {p["weight"]}% (P&L {p["pnl"]:+.1f}%)'
-                for p in top
-            )
-            ctx_lines.append(f"Portfolio: {port_text}")
+        elif context.get("portfolio_holdings") or context.get("portfolio_top"):
+            top = (context.get("portfolio_holdings") or context["portfolio_top"])[:5]
+            port_parts = []
+            for p in top:
+                d = p.get("direction", "long")[0].upper()
+                days = p.get("days_held")
+                age = f"/{days}d" if days else ""
+                pnl_d = p.get("pnl_dollars")
+                pnl_str = f"P&L {p['pnl']:+.1f}%"
+                if pnl_d is not None:
+                    pnl_str += f"(${pnl_d:+,.0f})"
+                port_parts.append(f'{p["ticker"]}[{d}{age}] {pnl_str}')
+            ctx_lines.append(f"Portfolio: {'  '.join(port_parts)}")
         ctx_text = "\n".join(ctx_lines) if ctx_lines else "Dashboard just opened."
         focus_line = f"\nOperator focus: {extra}\n" if extra.strip() else ""
 
@@ -280,8 +296,30 @@ class Bot:
 
         if not self._conversation:
             summary = self._summarize_context(context)
-            if summary:
-                self._conversation.append({"role": "user", "content": f"Dashboard state: {summary}"})
+            holdings = context.get("portfolio_holdings") or context.get("portfolio_top", [])
+            port_block = ""
+            if holdings:
+                goals = context.get("portfolio_goals", [])
+                goal_text = ", ".join(goals) if goals else "not set"
+                lines = [f"Portfolio (goals: {goal_text}, total: ${context.get('portfolio_value', 0):,.0f}):"]
+                for p in holdings:
+                    d = p.get("direction", "long").upper()
+                    cp = p.get("current_price", "?")
+                    av = p.get("avg_cost", "?")
+                    val = p.get("value")
+                    val_str = f"  ${val:,.0f}" if val is not None else ""
+                    days = p.get("days_held")
+                    age = f"  held {days}d" if days else ""
+                    lines.append(
+                        f"  {d} {p['ticker']}: {p.get('shares','?')} shares"
+                        f" @ ${av} avg → ${cp} now{val_str}"
+                        f"  P&L {p.get('pnl', 0):+.1f}% (${p.get('pnl_dollars', 0):+,.0f})"
+                        f"  {p.get('weight','?')}% of portfolio{age}"
+                    )
+                port_block = "\n" + "\n".join(lines)
+            seed = (f"Dashboard state: {summary}{port_block}").strip()
+            if seed:
+                self._conversation.append({"role": "user", "content": seed})
                 self._conversation.append({"role": "assistant", "content": "Understood."})
 
         self._conversation.append({"role": "user", "content": user_msg})
@@ -298,30 +336,8 @@ class Bot:
         return output
 
     def _summarize_context(self, context: dict) -> str:
-        parts = []
-        if context.get("habits_done") is not None:
-            parts.append(f"habits today {context['habits_done']}/{context.get('habits_total', '?')}")
-        if context.get("habit_avg_30") is not None:
-            parts.append(f"30-day habit avg {context['habit_avg_30']}%")
-            trends = context.get("habit_trends", [])
-            if trends:
-                worst = min(trends, key=lambda x: x["pct_30"])
-                parts.append(f"worst habit {worst['habit']}:{worst['pct_30']}%{worst['trend']}")
-        if context.get("tasks_remaining") is not None:
-            open_t = context.get("tasks_open", [])
-            label = f" ({', '.join(open_t[:2])})" if open_t else ""
-            parts.append(f"{context['tasks_remaining']} tasks remaining{label}")
-        if context.get("notes_count"):
-            parts.append(f"{context['notes_count']} notes")
-        if context.get("portfolio_value"):
-            parts.append(f"portfolio ${context['portfolio_value']:,.0f}")
-        if context.get("price_movers"):
-            m = context["price_movers"][:3]
-            parts.append("movers: " + " ".join(
-                f'{x["ticker"]} {"↑" if x["change"] > 0 else "↓"}{abs(x["change"]):.1f}%'
-                for x in m
-            ))
-        return ", ".join(parts)
+        from context import summarize
+        return summarize(context)
 
     def _call_conversation(self, max_tokens: int = 350) -> str:
         limit = self.persona.get("daily_call_limit", 50)
@@ -374,10 +390,18 @@ class Bot:
         hour = datetime.now().hour
         session = "morning" if hour < 12 else ("afternoon" if hour < 17 else "evening")
 
+        habit_detail = ""
+        if context.get("habit_trends"):
+            rows = [
+                f"  {t['habit']}: {t['pct_30']}% ({t['days_30']}/30 days) {t['trend']}"
+                for t in context["habit_trends"]
+            ]
+            habit_detail = "\nHabit breakdown (30-day):\n" + "\n".join(rows) + "\n"
+
         content = self._call(
             user_message=(
                 f"Session open — {session}.\n"
-                f"Dashboard state: {summary}\n\n"
+                f"Dashboard state: {summary}{habit_detail}\n\n"
                 "Generate a brief. Exactly 3 lines:\n"
                 "Line 1: one specific pattern you see in the 30-day data — name the habit and the number.\n"
                 "Line 2: one thing worth doing this session based on what's open.\n"
@@ -481,16 +505,29 @@ class Bot:
         if not self._api_available():
             return self._no_key_output("portfolio_narrative")
 
-        portfolio = context.get("portfolio_top", [])
+        portfolio = context.get("portfolio_holdings") or context.get("portfolio_top", [])
         if not portfolio:
             content = "[No portfolio data — add positions on the Portfolio screen first]"
             return self._make_output(content, "portfolio_narrative")
 
         port_lines = []
         for p in portfolio:
+            direction = p.get("direction", "long").upper()
+            pnl_d = p.get("pnl_dollars")
+            pnl_str = f"P&L {p['pnl']:+.1f}%"
+            if pnl_d is not None:
+                pnl_str += f" (${pnl_d:+,.0f})"
+            days = p.get("days_held")
+            days_str = f"  held {days}d" if days else ""
+            cp = p.get("current_price", "?")
+            av = p.get("avg_cost", "?")
+            val = p.get("value")
+            val_str = f"  ${val:,.0f} total" if val is not None else ""
             port_lines.append(
-                f'{p["ticker"]}: {p["weight"]}% of portfolio, P&L {p["pnl"]:+.1f}%'
-                + (f', {p["shares"]} shares' if p.get("shares") else "")
+                f"{direction} {p['ticker']}: {p.get('shares','?')} shares"
+                f" @ ${av} avg → ${cp} now{val_str}"
+                f"  {pnl_str}{days_str}"
+                f"  {p.get('weight','?')}% of portfolio"
             )
         goals = context.get("portfolio_goals", ["not set"])
         goal_text = ", ".join(goals) if goals else "not defined"
@@ -498,12 +535,14 @@ class Bot:
         content = self._call(
             user_message=(
                 f"Portfolio positions:\n" + "\n".join(port_lines) + f"\n\nStated goals: {goal_text}\n\n"
-                "Generate a portfolio narrative. Interpret these positions as a whole — "
-                "what is actually being built here, what the allocation says about conviction, "
-                "which positions are aligned with the stated goals and which are not. "
-                "3-5 sentences. Be direct about what works and what doesn't."
+                "Generate a portfolio narrative. For each position comment on delta "
+                "(long or short exposure — directional conviction) and, where the hold duration "
+                "is known, theta context (is this a long-term conviction hold or a shorter trade). "
+                "Then interpret the portfolio as a whole — what is being built, "
+                "what the allocation says about conviction, which positions align with stated goals. "
+                "3-5 sentences. Be direct."
             ),
-            max_tokens=320,
+            max_tokens=380,
         )
         return self._make_output(content, "portfolio_narrative")
 

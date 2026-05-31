@@ -36,8 +36,11 @@ The **trust level system** lets you decide how much autonomy NEON has — from s
 ## Prerequisites
 
 - Python 3.11+
-- An [Anthropic API key](https://console.anthropic.com) — see cost notes below
-- macOS (security and vitals modules use macOS-specific commands)
+- macOS or Linux (Windows is untested)
+- An [Anthropic API key](https://console.anthropic.com) — optional, see cost notes below
+- **Linux audio:** install `mpv` for background music (`sudo apt install mpv` or `sudo dnf install mpv`)
+
+**macOS-only features:** Security screen checks (SIP, FileVault, Firewall, etc.) and boot sound. Everything else — habits, tasks, notes, portfolio, NEON, music, vitals — runs on Linux.
 
 ---
 
@@ -46,29 +49,22 @@ The **trust level system** lets you decide how much autonomy NEON has — from s
 ```bash
 git clone https://github.com/JustinSchoenegge/Sandbox.git
 cd Sandbox
-pip install -r requirements.txt
-cp .env.example .env
+./setup.sh
 ```
 
-Edit `.env` and add your API key:
-```
-ANTHROPIC_API_KEY=your-key-here
+That's it. `setup.sh` handles the virtual environment, dependencies, API key prompt, and wires the `darkhour` alias into your shell profile. Open a new terminal tab and run:
+
+```bash
+darkhour
 ```
 
-Optionally set an admin passphrase (grants `[ADMIN]` badge):
+**The API key is optional.** The app runs fully without it — habits, tasks, notes, portfolio, and music all work locally. NEON goes silent until you add one. You can add or rotate a key later via `[r]` on the Security screen (no restart required).
+
+To set an admin passphrase (grants `[ADMIN]` badge and unlocks the Security screen):
 ```
 DARK_HOUR_ADMIN=your-name-here
 ```
-
-Run it:
-```bash
-python3 tui.py
-```
-
-Or add an alias to your shell profile:
-```bash
-alias darkhour="python3 /path/to/Sandbox/tui.py"
-```
+Add that line to your `.env` file.
 
 ---
 

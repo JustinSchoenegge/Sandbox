@@ -205,11 +205,11 @@ Input:focus {
 
 /* ── Game screen ─────────────────────────────────────────── */
 
-#game-prompt {
+#game-body {
     height: 1fr;
     border: double #1e3a5f;
-    content-align: center middle;
-    text-align: center;
+    background: #060615;
+    padding: 1 2;
     color: #f0f0ff;
 }
 
@@ -343,4 +343,18 @@ Input:focus {
     height: 2;
     padding: 0 1;
     color: #5f87af;
+}
+
+#sec-key-input {
+    border: double #e8a020;
+    background: #0a0a1e;
+    color: #f0f0ff;
+}
+
+/* ── Music screen: bg song input ─────────────────────────── */
+
+#music-bg-in {
+    border: double #4a9eff;
+    background: #0a0a1e;
+    color: #f0f0ff;
 }

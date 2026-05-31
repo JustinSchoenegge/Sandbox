@@ -1,9 +1,12 @@
 """vitals.py — system stats for the Dark Hour vitals bar."""
 
+import platform
 import re
 import shutil
 import subprocess
 from typing import Optional
+
+_SYSTEM = platform.system()
 
 
 def _run(cmd, timeout=2):
@@ -15,7 +18,9 @@ def _run(cmd, timeout=2):
 
 
 def _thermal_state() -> Optional[str]:
-    """Read NSProcessInfo.thermalState via objc runtime — no sudo, works on Apple Silicon."""
+    """Read NSProcessInfo.thermalState via objc runtime — macOS / Apple Silicon only."""
+    if _SYSTEM != "Darwin":
+        return None
     try:
         import ctypes, ctypes.util
         lib = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc"))
@@ -32,53 +37,72 @@ def _thermal_state() -> Optional[str]:
 
 
 def _get_temp() -> Optional[str]:
-    # osx-cpu-temp works on Intel; on Apple Silicon it returns 0.0°C
-    if shutil.which("osx-cpu-temp"):
-        val = _run(["osx-cpu-temp"])
-        if val and not val.startswith("0.0"):
-            return val
+    if _SYSTEM == "Darwin":
+        if shutil.which("osx-cpu-temp"):
+            val = _run(["osx-cpu-temp"])
+            if val and not val.startswith("0.0"):
+                return val
+        if shutil.which("istats"):
+            val = _run(["istats", "cpu", "--value-only"])
+            if val:
+                return f"{val}°C"
+        # Apple Silicon fallback via IORegistry (unit: 0.1 K)
+        try:
+            out = _run(["ioreg", "-rn", "AppleSmartBattery"], timeout=3)
+            m = re.search(r'"Temperature"\s*=\s*(\d+)', out)
+            if m:
+                celsius = int(m.group(1)) / 10.0 - 273.15
+                if 5 <= celsius <= 60:
+                    return f"{celsius:.0f}°C"
+        except Exception:
+            pass
 
-    if shutil.which("istats"):
-        val = _run(["istats", "cpu", "--value-only"])
-        if val:
-            return f"{val}°C"
-
-    # Apple Silicon fallback: battery temperature from IORegistry.
-    # Unit is 0.1 K (e.g. 2995 → 299.5 K → 26.4°C). Sanity-checked to 5–60°C.
-    try:
-        out = _run(["ioreg", "-rn", "AppleSmartBattery"], timeout=3)
-        m = re.search(r'"Temperature"\s*=\s*(\d+)', out)
-        if m:
-            celsius = int(m.group(1)) / 10.0 - 273.15
-            if 5 <= celsius <= 60:
-                return f"{celsius:.0f}°C"
-    except Exception:
-        pass
+    elif _SYSTEM == "Linux":
+        # Prefer `sensors` (lm-sensors package) for a clean reading
+        if shutil.which("sensors"):
+            val = _run(["sensors"])
+            m = re.search(r'(?:Core 0|Package id 0|CPU):\s*\+?([\d.]+)°C', val)
+            if m:
+                return f"{m.group(1)}°C"
+        # Fallback: read first thermal zone from sysfs
+        import glob
+        for zone in sorted(glob.glob("/sys/class/thermal/thermal_zone*/temp")):
+            try:
+                raw = int(open(zone).read().strip())
+                celsius = raw / 1000.0
+                if 5 <= celsius <= 110:
+                    return f"{celsius:.0f}°C"
+            except Exception:
+                continue
 
     return None
 
 
 def _get_fan() -> Optional[str]:
-    if shutil.which("osx-cpu-temp"):
-        val = _run(["osx-cpu-temp", "-f"])
-        # Intel: "1225 RPM" lines
-        rpm_vals = re.findall(r'(\d+)\s*RPM', val, re.IGNORECASE)
-        if rpm_vals:
-            # Show average RPM across all fans
-            avg = sum(int(r) for r in rpm_vals) // len(rpm_vals)
-            count = len(rpm_vals)
-            return f"{count}x {avg} RPM"
-        # Apple Silicon: tool reports count but can't read speeds
-        num_m = re.search(r'Num fans:\s*(\d+)', val)
-        if num_m:
-            n = num_m.group(1)
-            state = _thermal_state()
-            return f"{n}x · {state}" if state else f"{n} fans"
+    if _SYSTEM == "Darwin":
+        if shutil.which("osx-cpu-temp"):
+            val = _run(["osx-cpu-temp", "-f"])
+            rpm_vals = re.findall(r'(\d+)\s*RPM', val, re.IGNORECASE)
+            if rpm_vals:
+                avg = sum(int(r) for r in rpm_vals) // len(rpm_vals)
+                return f"{len(rpm_vals)}x {avg} RPM"
+            num_m = re.search(r'Num fans:\s*(\d+)', val)
+            if num_m:
+                n = num_m.group(1)
+                state = _thermal_state()
+                return f"{n}x · {state}" if state else f"{n} fans"
+        if shutil.which("istats"):
+            val = _run(["istats", "fan", "--value-only"])
+            if val:
+                return f"{val} RPM"
 
-    if shutil.which("istats"):
-        val = _run(["istats", "fan", "--value-only"])
-        if val:
-            return f"{val} RPM"
+    elif _SYSTEM == "Linux":
+        if shutil.which("sensors"):
+            val = _run(["sensors"])
+            rpm_vals = re.findall(r'(\d{3,5})\s*RPM', val)
+            if rpm_vals:
+                avg = sum(int(r) for r in rpm_vals) // len(rpm_vals)
+                return f"{len(rpm_vals)}x {avg} RPM"
 
     return None
 

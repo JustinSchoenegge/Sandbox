@@ -1,9 +1,91 @@
 """security.py — macOS security checks and maintenance tasks."""
 
+import json
 import os
+import platform
 import subprocess
 from datetime import datetime
 from pathlib import Path
+
+_SYSTEM = platform.system()
+
+CACHE_FILE = "data/security_cache.json"
+
+
+def save_scan_cache(checks: list, ports: list) -> None:
+    try:
+        data = {
+            "timestamp": datetime.now().isoformat(),
+            "checks": [{"label": l, "status": s, "is_good": g} for l, s, g in checks],
+            "ports": ports,
+        }
+        with open(CACHE_FILE, "w") as f:
+            json.dump(data, f)
+    except Exception:
+        pass
+
+
+def load_scan_cache() -> tuple:
+    """Return (checks, ports, iso_timestamp) or (None, None, None) on miss."""
+    try:
+        with open(CACHE_FILE) as f:
+            data = json.load(f)
+        checks = [(d["label"], d["status"], d["is_good"]) for d in data["checks"]]
+        return checks, data["ports"], data["timestamp"]
+    except Exception:
+        return None, None, None
+
+
+def cache_age_hours() -> float:
+    try:
+        with open(CACHE_FILE) as f:
+            data = json.load(f)
+        ts = datetime.fromisoformat(data["timestamp"])
+        return (datetime.now() - ts).total_seconds() / 3600
+    except Exception:
+        return float("inf")
+
+
+def count_api_keys() -> int:
+    """Count non-placeholder API keys/tokens in .env."""
+    env_path = Path(__file__).parent / ".env"
+    count = 0
+    try:
+        with open(env_path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key, value = key.strip(), value.strip()
+                if any(s in key.upper() for s in ("_KEY", "_TOKEN", "_SECRET")):
+                    if value and "your-key" not in value.lower() and len(value) > 8:
+                        count += 1
+    except Exception:
+        pass
+    return count
+
+
+def update_api_key(new_key: str, key_name: str = "ANTHROPIC_API_KEY") -> tuple:
+    """Rewrite key_name in .env and reload into os.environ. Returns (ok, msg)."""
+    env_path = Path(__file__).parent / ".env"
+    try:
+        lines = env_path.read_text().splitlines(keepends=True) if env_path.exists() else []
+        updated = False
+        new_lines = []
+        for line in lines:
+            if line.startswith(f"{key_name}="):
+                new_lines.append(f"{key_name}={new_key}\n")
+                updated = True
+            else:
+                new_lines.append(line)
+        if not updated:
+            new_lines.append(f"{key_name}={new_key}\n")
+        env_path.write_text("".join(new_lines))
+        os.environ[key_name] = new_key
+        return True, f"{key_name} updated — active immediately."
+    except Exception as e:
+        return False, f"Failed: {str(e)[:60]}"
 
 
 def _run(cmd, timeout=5):
@@ -16,6 +98,8 @@ def _run(cmd, timeout=5):
 
 def run_checks():
     """Return list of (label, status_str, is_good: bool)."""
+    if _SYSTEM != "Darwin":
+        return []
     results = []
 
     # System Integrity Protection
@@ -79,18 +163,30 @@ def run_checks():
 # ── Maintenance tasks ─────────────────────────────────────────────────────────
 
 def empty_trash() -> tuple[bool, str]:
-    """Empty macOS Trash via AppleScript. Returns (success, message)."""
-    try:
-        r = subprocess.run(
-            ["osascript", "-e", 'tell application "Finder" to empty trash'],
-            capture_output=True, timeout=10,
-        )
-        if r.returncode != 0:
-            err = (r.stderr or r.stdout).strip()[:80]
-            return False, f"Trash could not be emptied: {err or 'unknown error'}"
-        return True, "Trash emptied."
-    except Exception as e:
-        return False, f"Failed: {str(e)[:60]}"
+    """Empty system Trash. macOS uses AppleScript; Linux uses gio or trash-cli."""
+    if _SYSTEM == "Darwin":
+        try:
+            r = subprocess.run(
+                ["osascript", "-e", 'tell application "Finder" to empty trash'],
+                capture_output=True, timeout=10,
+            )
+            if r.returncode != 0:
+                err = (r.stderr or r.stdout).strip()[:80]
+                return False, f"Trash could not be emptied: {err or 'unknown error'}"
+            return True, "Trash emptied."
+        except Exception as e:
+            return False, f"Failed: {str(e)[:60]}"
+    if _SYSTEM == "Linux":
+        import shutil
+        for cmd in (["gio", "trash", "--empty"], ["trash-empty"]):
+            if shutil.which(cmd[0]):
+                try:
+                    r = subprocess.run(cmd, capture_output=True, timeout=10)
+                    return (True, "Trash emptied.") if r.returncode == 0 else (False, "Trash empty failed.")
+                except Exception as e:
+                    return False, f"Failed: {str(e)[:60]}"
+        return False, "No trash utility found (install gio or trash-cli)."
+    return False, f"Empty Trash not supported on {_SYSTEM}."
 
 
 def archive_desktop() -> tuple[bool, str]:
@@ -134,23 +230,37 @@ def check_api_key_age() -> tuple[int, str]:
 
 
 def open_key_rotation() -> None:
-    """Open Anthropic console in the browser."""
-    subprocess.Popen(["open", "https://console.anthropic.com/settings/keys"])
+    """Open Anthropic console in the default browser."""
+    url = "https://console.anthropic.com/settings/keys"
+    opener = {"Darwin": "open", "Linux": "xdg-open", "Windows": "start"}.get(_SYSTEM, "xdg-open")
+    subprocess.Popen([opener, url])
 
 
 def get_open_ports():
     """Return sorted list of local listening TCP port numbers."""
+    ports = set()
     try:
-        r = subprocess.run(["netstat", "-an", "-p", "tcp"], capture_output=True, text=True, timeout=5)
-        ports = set()
-        for line in r.stdout.splitlines():
-            if "LISTEN" in line:
-                parts = line.split()
-                if len(parts) >= 4:
-                    addr = parts[3]
-                    port_str = addr.rsplit(".", 1)[-1]
-                    if port_str.isdigit():
-                        ports.add(int(port_str))
-        return sorted(ports)
+        if _SYSTEM == "Darwin":
+            r = subprocess.run(["netstat", "-an", "-p", "tcp"], capture_output=True, text=True, timeout=5)
+            for line in r.stdout.splitlines():
+                if "LISTEN" in line:
+                    parts = line.split()
+                    if len(parts) >= 4:
+                        port_str = parts[3].rsplit(".", 1)[-1]
+                        if port_str.isdigit():
+                            ports.add(int(port_str))
+        elif _SYSTEM == "Linux":
+            import shutil
+            if shutil.which("ss"):
+                r = subprocess.run(["ss", "-tlnp"], capture_output=True, text=True, timeout=5)
+                import re
+                for m in re.finditer(r":(\d+)\s", r.stdout):
+                    ports.add(int(m.group(1)))
+            else:
+                r = subprocess.run(["netstat", "-tlnp"], capture_output=True, text=True, timeout=5)
+                import re
+                for m in re.finditer(r":(\d+)\s", r.stdout):
+                    ports.add(int(m.group(1)))
     except Exception:
-        return []
+        pass
+    return sorted(ports)
