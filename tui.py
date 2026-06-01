@@ -2095,11 +2095,19 @@ class DarkHourApp(App):
     CSS_PATH = "tui.tcss"
     BINDINGS = [Binding("m", "toggle_mute", "Mute", priority=True)]
 
+    # Streak-break tripwire: text a reminder if a streak of at least
+    # TRIPWIRE_MIN_STREAK days is still undone after TRIPWIRE_HOUR (24h clock).
+    TRIPWIRE_MIN_STREAK = 5
+    TRIPWIRE_HOUR = 20          # 8pm
+    TRIPWIRE_INTERVAL = 1800    # re-check every 30 min while the app is open
+
     def on_mount(self) -> None:
         self._music_proc = None
         self._music_muted = False
         self._current_song = ""
         self._morning_brief = None
+        self._tripwire_warned: set[str] = set()   # habits already texted today
+        self._tripwire_date: str = ""             # date the set above belongs to
         config = load_config()
         self.is_admin = config["is_admin"]
         self._bg_music_path = config.get("bg_music", "")
@@ -2110,6 +2118,38 @@ class DarkHourApp(App):
         self._watcher = Watcher()
         self._bot = Bot(load_persona(), self._memory, self._watcher)
         self.push_screen(DashboardScreen(config["name"], self.is_admin))
+        self.set_interval(self.TRIPWIRE_INTERVAL, self._check_streak_tripwire)
+
+    def _check_streak_tripwire(self) -> None:
+        """Text a reminder for any long streak still undone late in the day.
+
+        Runs on a timer while the app is open. Each habit warns at most once
+        per day; only fires after TRIPWIRE_HOUR so it isn't premature.
+        """
+        now = datetime.now()
+        if now.hour < self.TRIPWIRE_HOUR:
+            return
+        today = now.strftime("%Y-%m-%d")
+        # New day → reset the per-day dedup set.
+        if today != self._tripwire_date:
+            self._tripwire_date = today
+            self._tripwire_warned = set()
+        try:
+            data = load_habits()
+            habits = data["habits"]
+            logs = data["logs"]
+        except Exception:
+            return
+        for habit in habits:
+            if habit in self._tripwire_warned:
+                continue
+            dates = logs.get(habit, [])
+            if is_done_today(dates):
+                continue
+            streak = calculate_streak(dates)
+            if streak >= self.TRIPWIRE_MIN_STREAK:
+                notify(f"{habit}: {streak}-day streak breaks at midnight.")
+                self._tripwire_warned.add(habit)
 
     @work(exclusive=False)
     async def _run_morning_brief(self) -> None:
