@@ -383,6 +383,9 @@ class Bot:
 
     def generate_morning_brief(self, context: dict) -> BotOutput:
         """Proactive opening brief. Fires once on app launch. No verdict required."""
+        # Gate like every other generator: at L0 (OBSERVER) the bot is silent.
+        if not self._watcher.check_compliance(self.persona["name"], "observations", self.persona.get("trust_level", 1)):
+            return self._blocked_output("brief")
         if not self._api_available():
             return self._no_key_output("brief")
 

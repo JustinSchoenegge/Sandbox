@@ -87,7 +87,14 @@ def _audio_loop_cmd(path: str) -> "list[str] | None":
     """Return the command list to loop an audio file, or None if no player found."""
     if _SYSTEM == "Darwin":
         quoted = shlex.quote(path)
-        return ["bash", "-c", f"while true; do afplay {quoted}; done"]
+        # Back off if afplay exits fast. Without this guard a bad/empty/undecodable
+        # file (e.g. one set via [b] change-bg, or no audio device) makes afplay
+        # return in ~10ms and the loop respawns ~100x/sec, pinning a CPU core and
+        # spinning up the fan. If a play lasted <2s, wait 5s before retrying so a
+        # failure idles instead of busy-looping.
+        return ["bash", "-c",
+                f"while true; do s=$SECONDS; afplay {quoted}; "
+                f"[ $((SECONDS-s)) -lt 2 ] && sleep 5; done"]
     if _SYSTEM == "Linux":
         if shutil.which("mpv"):
             return ["mpv", "--no-video", "--loop=inf", "--really-quiet", path]
@@ -2188,7 +2195,12 @@ class DarkHourApp(App):
             except Exception:
                 pass
         else:
-            self._music_proc = _start_bg_music()
+            # Pass the configured path so a custom track set via [b] survives a
+            # mute/unmute cycle instead of falling back to vicecity.m4a.
+            bg_path = getattr(self, "_bg_music_path", "")
+            self._music_proc = _start_bg_music(bg_path)
+            name = os.path.splitext(os.path.basename(bg_path))[0].upper() if bg_path else ""
+            self._current_song = name or "VICE CITY"
         try:
             self.query_one(FooterControls).set_muted(self._music_muted, self._current_song)
         except Exception:

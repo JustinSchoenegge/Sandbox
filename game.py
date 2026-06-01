@@ -11,9 +11,17 @@ from rich import box
 from stocks import STOCKS, PRICES_AS_OF, TIER_STYLES
 from portfolio import load_portfolio, check_alignment
 
-console = Console()
+console = Console(style="on #060615")
 
 SCORES_FILE = "scores.txt"
+
+_AMBER  = "#e8a020"
+_BLUE   = "#4a9eff"
+_GREEN  = "#00c040"
+_RED    = "#c03040"
+_STEEL  = "#5f87af"
+_DIM    = "#2a3a5a"
+_BORDER = "#1e3a5f"
 
 
 def save_score(name, ticker, attempts):
@@ -32,14 +40,22 @@ def build_alignment_panel(stock, portfolio):
     if owned:
         tier = owned.get("tier", "?")
         tier_style = TIER_STYLES.get(tier, "white")
-        lines.append("You own this stock\n", style="bold cyan")
-        lines.append(f"  Shares: {owned['shares']}   Avg cost: ${owned['avg_cost']:.2f}   Tier: ", style="dim white")
+        direction = owned.get("direction", "long")
+        dir_style = _BLUE if direction == "long" else _AMBER
+        lines.append("You own this  ", style=f"bold {_BLUE}")
+        lines.append(f"[{direction.upper()}]", style=f"bold {dir_style}")
+        lines.append("\n")
+        lines.append("  Shares: ", style=f"dim {_STEEL}")
+        lines.append(f"{owned['shares']}", style="white")
+        lines.append("   Avg cost: ", style=f"dim {_STEEL}")
+        lines.append(f"${owned['avg_cost']:.2f}", style="white")
+        lines.append("   Tier: ", style=f"dim {_STEEL}")
         lines.append(f"{tier}\n", style=tier_style)
     else:
         label, style = check_alignment(sector, goals)
         lines.append("Portfolio fit: ", style="dim white")
         lines.append(f"{label}\n", style=style)
-        lines.append(f"  Sector: {sector}   Your goals: {', '.join(goals)}", style="dim")
+        lines.append(f"  Sector: {sector}   Goals: {', '.join(goals)}", style="dim")
 
     return lines
 
@@ -52,27 +68,27 @@ def play_round(name):
     console.clear()
     console.print(Panel(
         Group(
-            Text(f"{stock['name']}  ({stock['ticker']})", style="bold cyan"),
-            Text(f"Sector: {stock['sector']}", style="dim white"),
-            Text(f"Price hint: {stock['hint']}", style="dim yellow"),
-            Rule(style="cyan dim"),
-            Text(f"Prices approximate as of {PRICES_AS_OF}.", style="dim"),
-            Text("Guess within 5% to win. Type q to quit.", style="dim"),
+            Text(f"  {stock['name']}  ({stock['ticker']})", style=f"bold {_AMBER}"),
+            Text(f"  Sector:  {stock['sector']}", style=f"dim {_STEEL}"),
+            Text(f"  Hint:    {stock['hint']}", style=f"dim {_BLUE}"),
+            Rule(style=_BORDER),
+            Text(f"  Prices approximate as of {PRICES_AS_OF}  ·  guess within 5% to win  ·  q to quit",
+                 style=f"dim {_DIM}"),
         ),
-        title="[bold cyan]STOCK GUESSER[/bold cyan]",
-        box=box.HEAVY,
-        style="cyan",
+        title=f"[bold {_AMBER}]═══  STOCK GUESSER  ═══[/bold {_AMBER}]",
+        box=box.DOUBLE,
+        style=_BORDER,
         padding=(0, 1),
     ))
 
     while True:
-        raw = Prompt.ask("[cyan]  Your guess $[/cyan]").strip()
+        raw = Prompt.ask(f"[bold {_AMBER}]  Your guess $[/bold {_AMBER}]").strip()
         if raw.lower() == "q":
-            console.print("\n[dim]Round abandoned.[/dim]\n")
+            console.print(f"\n[dim {_STEEL}]  Round abandoned.[/dim {_STEEL}]\n")
             return None
 
         if not raw.isdigit():
-            console.print("[bold red]Enter a whole number or q to quit.[/bold red]")
+            console.print(f"[bold {_RED}]  Enter a whole number or q to quit.[/bold {_RED}]")
             continue
 
         guess = int(raw)
@@ -81,40 +97,48 @@ def play_round(name):
         pct_off = diff / stock["price"]
 
         if pct_off <= 0.05:
+            correct_line = Text()
+            correct_line.append("  Actual price: ", style=f"dim {_STEEL}")
+            correct_line.append(f"${stock['price']}", style="bold white")
+            correct_line.append("  —  ", style=f"dim {_STEEL}")
+            correct_line.append(f"{attempts} attempt(s)", style=f"bold {_GREEN}")
             console.print(Panel(
                 Group(
-                    Text(f"Actual price: ${stock['price']}  —  got it in {attempts} attempt(s).", style="bold green"),
-                    Rule(style="green dim"),
-                    Text(f"{stock['fact']}", style="italic white"),
-                    Rule(style="green dim"),
+                    correct_line,
+                    Rule(style=_BORDER),
+                    Text(f"  {stock['fact']}", style=f"italic {_STEEL}"),
+                    Rule(style=_BORDER),
                     build_alignment_panel(stock, portfolio),
                 ),
-                title="[bold green]CORRECT[/bold green]",
-                box=box.HEAVY,
-                style="green",
+                title=f"[bold {_GREEN}]  CORRECT  [/bold {_GREEN}]",
+                box=box.DOUBLE,
+                style=_GREEN,
                 padding=(0, 1),
             ))
             save_score(name, stock["ticker"], attempts)
             return attempts
         elif guess < stock["price"]:
-            console.print(f"[bold yellow]Too low![/bold yellow]  (guessed ${guess})")
+            console.print(f"[bold {_AMBER}]  Too low![/bold {_AMBER}]  guessed [white]${guess}[/white]")
         else:
-            console.print(f"[bold yellow]Too high![/bold yellow]  (guessed ${guess})")
+            console.print(f"[bold {_AMBER}]  Too high![/bold {_AMBER}]  guessed [white]${guess}[/white]")
 
 
 def main(name="Player"):
     while True:
         console.clear()
         console.print(Panel(
-            Text("Guess the stock price to within 5% to win.\nPrices are approximate.", style="dim white", justify="center"),
-            title="[bold cyan]STOCK GUESSER[/bold cyan]",
-            box=box.HEAVY,
-            style="cyan",
+            Group(
+                Text("  Guess the stock price to within 5% to win.", style=f"dim {_STEEL}"),
+                Text("  Prices are approximate.", style=f"dim {_DIM}"),
+            ),
+            title=f"[bold {_AMBER}]═══  STOCK GUESSER  ═══[/bold {_AMBER}]",
+            box=box.DOUBLE,
+            style=_BORDER,
             padding=(0, 1),
         ))
 
         play_round(name)
 
-        again = Prompt.ask("\n[cyan]  Play again[/cyan]", choices=["y", "n"])
+        again = Prompt.ask(f"\n[bold {_AMBER}]  Play again[/bold {_AMBER}]", choices=["y", "n"])
         if again != "y":
             break

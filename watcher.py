@@ -153,7 +153,8 @@ class Watcher:
 
     @property
     def recent_flags(self) -> list[WatcherFlag]:
-        return self._flags[-5:]
+        # deque doesn't support slicing — materialize to a list first.
+        return list(self._flags)[-5:]
 
     @property
     def flag_count(self) -> int:
