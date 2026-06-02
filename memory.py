@@ -29,6 +29,7 @@ class MemoryManager:
         self._last_output_preview: str = ""
         self._daily_calls: int = 0
         self._call_date: str = ""
+        self._focus_habit: Optional[dict] = None  # {date, habit, miss_streak} flagged in last brief
         self._load()
 
     # ── persistence ──────────────────────────────────────────────────────────
@@ -44,6 +45,7 @@ class MemoryManager:
             self._last_output_preview = data.get("last_output_preview", "")
             self._daily_calls = data.get("daily_calls", 0)
             self._call_date = data.get("call_date", "")
+            self._focus_habit = data.get("focus_habit")
         except Exception:
             pass
 
@@ -55,6 +57,7 @@ class MemoryManager:
             "updated": datetime.now().strftime("%Y-%m-%d %H:%M"),
             "daily_calls": self._daily_calls,
             "call_date": self._call_date,
+            "focus_habit": self._focus_habit,
         })
 
     # ── session recording ─────────────────────────────────────────────────────
@@ -104,6 +107,22 @@ class MemoryManager:
             "rejected": len(rejected),
         })
         self._summaries = self._summaries[-_MAX_SUMMARIES:]
+        self._save()
+
+    # ── accountability loop ────────────────────────────────────────────────────
+
+    def last_focus_habit(self) -> Optional[dict]:
+        """The habit the previous brief flagged: {date, habit, miss_streak} or None."""
+        return dict(self._focus_habit) if self._focus_habit else None
+
+    def set_focus_habit(self, habit: str, miss_streak: int = 1) -> None:
+        """Record the habit this session's brief flagged so the next launch can
+        check follow-through. miss_streak counts consecutive flags left undone."""
+        self._focus_habit = {
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "habit": habit,
+            "miss_streak": miss_streak,
+        }
         self._save()
 
     # ── prompt context ────────────────────────────────────────────────────────

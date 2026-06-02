@@ -53,7 +53,10 @@ def build_context_dict() -> dict:
             recent  = len(log_set & last_14)
             prior   = len(log_set & prior_14)
             trend   = "↑" if recent > prior else ("↓" if recent < prior else "→")
-            trend_data.append({"habit": h, "pct_30": round(days_30 / 30 * 100), "days_30": days_30, "trend": trend})
+            trend_data.append({
+                "habit": h, "pct_30": round(days_30 / 30 * 100), "days_30": days_30,
+                "trend": trend, "done_today": is_done_today(logs.get(h, [])),
+            })
         ctx["habit_trends"] = trend_data
         if trend_data:
             ctx["habit_avg_30"] = round(

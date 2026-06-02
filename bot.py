@@ -90,10 +90,14 @@ class Bot:
 
     # ── system prompt ─────────────────────────────────────────────────────────
 
-    def _system_prompt(self) -> str:
+    def _static_system(self) -> str:
+        """Stable system prefix — identical across sessions, so it caches.
+
+        Everything here is persona/UX/corpus that does NOT change between calls.
+        Kept separate from _dynamic_system() so the cache_control breakpoint sits
+        on a stable prefix and actually hits (cache_read) on the second call.
+        """
         p = self.persona
-        memory_ctx = self._memory.get_context_for_prompt()
-        verbatim_ctx = self._memory.get_verbatim_examples()
 
         dashboard_ctx = (
             "DASHBOARD YOU INHABIT:\n"
@@ -145,7 +149,15 @@ class Bot:
                 if corpus
                 else ""
             )
-            + (
+        )
+
+    def _dynamic_system(self) -> str:
+        """Per-session system content — changes as judgments accrue, so it must
+        sit AFTER the cached static block (no cache_control of its own)."""
+        memory_ctx = self._memory.get_context_for_prompt()
+        verbatim_ctx = self._memory.get_verbatim_examples()
+        return (
+            (
                 f"TASTE MEMORY — session history:\n{memory_ctx}\n\n"
                 if memory_ctx
                 else "TASTE MEMORY — no prior sessions. You are observing for the first time.\n\n"
@@ -157,6 +169,23 @@ class Bot:
                 else ""
             )
         )
+
+    def _system_blocks(self) -> list:
+        """Two-block system array: a cached static prefix + a live dynamic tail.
+
+        cache_control sits ONLY on the static block so its stable prefix produces
+        cache_read hits on subsequent calls. The dynamic tail is appended without
+        cache_control (and only when non-empty — the API rejects empty text blocks).
+        """
+        blocks = [{
+            "type": "text",
+            "text": self._static_system(),
+            "cache_control": {"type": "ephemeral"},
+        }]
+        dynamic = self._dynamic_system()
+        if dynamic.strip():
+            blocks.append({"type": "text", "text": dynamic})
+        return blocks
 
     def invalidate_corpus_cache(self) -> None:
         self._corpus_cache = None
@@ -369,17 +398,67 @@ class Bot:
             response = get_client().messages.create(
                 model="claude-sonnet-4-6",
                 max_tokens=max_tokens,
-                system=[{
-                    "type": "text",
-                    "text": self._system_prompt(),
-                    "cache_control": {"type": "ephemeral"},
-                }],
+                system=self._system_blocks(),
                 messages=messages,
             )
             self._memory.increment_daily_calls()
             return response.content[0].text.strip()
         except Exception as e:
             return f"[Connection lost — {str(e)[:60]}]"
+
+    def _pick_focus_habit(self, context: dict) -> Optional[str]:
+        """The single habit worth holding the operator accountable to today.
+
+        Mirrors the ANALYTICAL PRIORITIES: an endangered streak outranks a chronic
+        low-completion habit. Returns None when nothing is worth flagging.
+        """
+        endangered = context.get("endangered_streaks") or []
+        if endangered:
+            return max(endangered, key=lambda e: e.get("streak", 0))["habit"]
+        trends = context.get("habit_trends") or []
+        if trends:
+            worst = min(trends, key=lambda t: t.get("pct_30", 100))
+            if worst.get("pct_30", 100) < 50:
+                return worst["habit"]
+        return None
+
+    def _build_accountability(self, context: dict) -> str:
+        """Compare the habit flagged in the previous brief against today's logs and
+        build a 'you said / you did' directive for NEON. Then persist today's flag.
+
+        Deterministic — the flagged habit is derived from the data, never parsed
+        out of NEON's prose, so the follow-through can't drift. Returns "" when
+        there is no prior flag to follow up on.
+        """
+        today = datetime.now().strftime("%Y-%m-%d")
+        trends = context.get("habit_trends", [])
+        done_map = {t["habit"]: t.get("done_today") for t in trends}
+        prior = self._memory.last_focus_habit()
+
+        followthrough = ""
+        if prior and prior.get("date", "") < today and prior.get("habit") in done_map:
+            h = prior["habit"]
+            if done_map.get(h):
+                followthrough = (
+                    f"ACCOUNTABILITY: Last session ({prior['date']}) you flagged {h}. "
+                    f"It is DONE today — open by crediting the follow-through in one line, by name."
+                )
+            else:
+                n = prior.get("miss_streak", 1) + 1
+                followthrough = (
+                    f"ACCOUNTABILITY: Last session ({prior['date']}) you flagged {h}. "
+                    f"Still NOT done — {n} sessions running now. Open line 1 by naming {h} directly."
+                )
+
+        focus = self._pick_focus_habit(context)
+        if focus:
+            same_undone = bool(
+                prior and prior.get("habit") == focus
+                and prior.get("date", "") < today and not done_map.get(focus)
+            )
+            streak = prior.get("miss_streak", 1) + 1 if same_undone else 1
+            self._memory.set_focus_habit(focus, streak)
+        return followthrough
 
     def generate_morning_brief(self, context: dict) -> BotOutput:
         """Proactive opening brief. Fires once on app launch. No verdict required."""
@@ -401,9 +480,12 @@ class Bot:
             ]
             habit_detail = "\nHabit breakdown (30-day):\n" + "\n".join(rows) + "\n"
 
+        accountability = self._build_accountability(context)
+
         content = self._call(
             user_message=(
-                f"Session open — {session}.\n"
+                (accountability + "\n\n" if accountability else "")
+                + f"Session open — {session}.\n"
                 f"Dashboard state: {summary}{habit_detail}\n\n"
                 "Generate a brief. Exactly 3 lines:\n"
                 "Line 1: one specific pattern you see in the 30-day data — name the habit and the number.\n"
@@ -640,11 +722,7 @@ class Bot:
             response = get_client().messages.create(
                 model="claude-sonnet-4-6",
                 max_tokens=max_tokens,
-                system=[{
-                    "type": "text",
-                    "text": self._system_prompt(),
-                    "cache_control": {"type": "ephemeral"},
-                }],
+                system=self._system_blocks(),
                 messages=[{"role": "user", "content": trust_line + trait_directive + user_message}],
             )
             self._memory.increment_daily_calls()
