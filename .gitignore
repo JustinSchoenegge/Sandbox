@@ -6,6 +6,7 @@ __pycache__/
 *.pyc
 *.m4a
 *.m4ax
+*.pptx
 .DS_Store
 .secrets/
 .claude/

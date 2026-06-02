@@ -6,6 +6,8 @@ You own everything. Your data stays on your machine. Your API key goes directly 
 
 Built on Python + Textual. Aesthetic: dark navy, amber gold, Vice City neon.
 
+**The aim is a closed loop:** you input data → NEON reads all of it at once → you get signal → you act → repeat. Every interface fights for your attention; this one spends its intelligence reflecting your own life back at you so the next decision is better-informed. The loop getting tighter and more personal over time *is* the product.
+
 ---
 
 ## What It Is
@@ -14,9 +16,48 @@ Most interfaces are built to keep you engaged. This one is built to make you mor
 
 **NEON** is the AI persona at the center of it. It runs on Claude Sonnet 4.6, sees all your dashboard data at once, and remembers what you've approved and rejected across sessions. Every judgment you make trains it toward your specific aesthetic. Over months it becomes calibrated to how you actually think — not to some average user profile.
 
-The **Watcher** runs alongside NEON, logging everything it says and enforcing permission boundaries. You can see its flags. You can review what got approved. The oversight is visible, not hidden.
+The **Watcher** runs alongside NEON, logging everything it says and gating its output by trust level. You can see its flags. You can review what got approved. The oversight is visible, not hidden.
 
 The **trust level system** lets you decide how much autonomy NEON has — from silent observer to full autonomous generation. You extend trust deliberately, based on whether it's earned.
+
+### How NEON Learns Your Taste
+
+Every output NEON produces, you judge. That judgment is the training signal — no fine-tuning, no cloud profile, just a loop that runs on your machine:
+
+```
+YOU JUDGE  →  STORED  →  COMPRESSED  →  INJECTED  →  NEON ADAPTS
+approve/   →  saved to →  session    →  added to  →  next output
+reject        record      summarized    next prompt   reflects your taste
+```
+
+The accountability loop closes the same way in the other direction: if the morning brief flags a habit, the next session checks whether you actually did it and NEON calls out the follow-through — by name, with the streak count.
+
+---
+
+## Scope: What's Built vs Where It's Going
+
+This is an actively developed personal project, not a finished product. The line between what runs today and what's still vision is drawn deliberately — the loop has to work before the world gets built around it.
+
+**Built and working today:**
+
+- **One AI persona, NEON** (Claude Sonnet 4.6) — sees the whole dashboard at once; generates a morning brief on launch, plus observations, chat, UX reviews, music specs, and ASCII art on demand.
+- **Taste memory across sessions** — approve/reject judgments are compressed and re-injected, so NEON drifts toward your aesthetic over time.
+- **Accountability loop** — flagged habits are tracked session-to-session and called out by name.
+- **Trust levels (0–5)** — shift NEON's tone and gate which kinds of output it's allowed to produce.
+- **The Watcher** — gates output by trust level (silent at L0), logs everything NEON says, and monitors API-key, memory, and music health.
+- **Streak tripwire** — texts you (iMessage) when a long streak is about to break.
+- **Prompt caching** on the static persona/context layer, so daily use stays cheap.
+- **Local-first dashboard** — Habits, Tasks, Notes, Portfolio, Music, Game, Security, Vitals. Your data never leaves `data/`; your key goes straight to Anthropic.
+
+**On the roadmap (vision, not yet built):**
+
+- **Live market data** — portfolio prices currently come from a cache, not a real-time feed.
+- **Multiple bot personas with peer critique** — today there is one bot; the architecture anticipates more.
+- **The Watcher as a real-time behavioral enforcer** — today it gates by trust and logs; deeper enforcement is planned.
+- **The "veil" / streaming layer** — bots aware of an audience without being influenced by it, for a live-studio stream.
+- **Weekly retrospective, calendar integration, and data-schema validation.**
+
+If a feature isn't in the "built" list, treat it as intent, not a promise.
 
 ---
 
